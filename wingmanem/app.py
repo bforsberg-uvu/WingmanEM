@@ -37,14 +37,30 @@ def _pause() -> None:
     input("\nPress Enter to continue...")
 
 
-def _menu_box(title: str, options: list[str], width: int = 58) -> str:
-    """Build a box menu so each content line is exactly `width` chars (right border straight)."""
+# ANSI colors for menu items (enabled=black, disabled=very light gray)
+_MENU_COLOR_ENABLED = "\033[30m"   # black
+_MENU_COLOR_DISABLED = "\033[2;37m"  # very light gray (dim white)
+_MENU_COLOR_RESET = "\033[0m"
+
+
+def _menu_box(
+    title: str,
+    options: list[str | tuple[str, bool]],
+    width: int = 58,
+) -> str:
+    """Build a box menu. Options are a label string or (label, enabled); missing enabled = True."""
     border = "╔" + "═" * width + "╗"
     sep = "╠" + "═" * width + "╣"
     bottom = "╚" + "═" * width + "╝"
     lines = ["║" + title[:width].ljust(width) + "║"]
     for opt in options:
-        lines.append("║" + opt[:width].ljust(width) + "║")
+        if isinstance(opt, tuple):
+            text, enabled = opt
+        else:
+            text, enabled = opt, True
+        content = text[:width].ljust(width)
+        color = _MENU_COLOR_ENABLED if enabled else _MENU_COLOR_DISABLED
+        lines.append("║" + color + content + _MENU_COLOR_RESET + "║")
     return "\n".join([border, lines[0], sep] + lines[1:] + [bottom])
 
 
@@ -84,10 +100,10 @@ def authenticate() -> bool:
 MAIN_MENU = _menu_box(
     "                    WingmanEM — Main Menu",
     [
-        "  1. Project Creation & Estimation",
-        "  2. People Management & Coaching",
-        "  3. Manager / Management Improvement",
-        "  4. Exit",
+        ("  1. Project Creation & Estimation"),
+        ("  2. People Management & Coaching"),
+        ("  3. Manager / Management Improvement"),
+        ("  4. Exit"),
     ],
 )
 
@@ -115,10 +131,10 @@ def run_main_menu() -> bool:
 PROJECT_MENU = _menu_box(
     "           Project Creation & Estimation",
     [
-        "  1. Input project spec (get structured breakdown)",
-        "  2. Sync breakdown to Jira",
-        "  3. Ask about project status (natural language)",
-        "  4. Back to main menu",
+        ("  1. Input project spec (get structured breakdown)", False),
+        ("  2. Sync breakdown to Jira", False),
+        ("  3. Ask about project status (natural language)", False),
+        ("  4. Back to main menu", True),
     ],
 )
 
@@ -140,11 +156,11 @@ def run_project_estimation_menu() -> None:
 PEOPLE_MENU = _menu_box(
     "           People Management & Coaching",
     [
-        "  1. Upload 1:1 recording (summarize & action items)",
-        "  2. View 1:1 trends analysis",
-        "  3. Get suggested follow-up topics",
-        "  4. View milestone reminders (anniversaries, birthdays)",
-        "  5. Back to main menu",
+        ("  1. Upload 1:1 recording (summarize & action items)", False),
+        ("  2. View 1:1 trends analysis", False),
+        ("  3. Get suggested follow-up topics", False),
+        ("  4. View milestone reminders (anniversaries, birthdays)", False),
+        ("  5. Back to main menu", True),
     ],
 )
 
@@ -167,8 +183,8 @@ def run_people_coaching_menu() -> None:
 IMPROVEMENT_MENU = _menu_box(
     "           Manager / Management Improvement",
     [
-        "  1. Get daily management tip",
-        "  2. Back to main menu",
+        ("  1. Get daily management tip", False),
+        ("  2. Back to main menu", True),
     ],
 )
 
