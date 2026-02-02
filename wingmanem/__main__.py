@@ -1,9 +1,6 @@
 """Entry point for running the package with python -m wingmanem."""
 
-
-def main() -> None:
-    print("WingmanEM")
-
+from wingmanem.app import main
 
 if __name__ == "__main__":
     main()

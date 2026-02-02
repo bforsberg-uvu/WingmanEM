@@ -1,3 +1,4 @@
 # WingmanEM dependencies
-# Add package names and versions here, e.g.:
+# Chunk #1 CLI prototype uses only the Python standard library.
+# Add package names and versions here as features are added, e.g.:
 # requests>=2.28.0
