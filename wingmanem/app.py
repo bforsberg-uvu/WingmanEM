@@ -189,6 +189,22 @@ PEOPLE_MENU = _menu_box(
 )
 
 
+def run_people_coaching_menu() -> None:
+    """Sub-menu for people management and coaching."""
+    _run_submenu(
+        PEOPLE_MENU,
+        6,
+        {
+            1: lambda: print("\n[Placeholder] Upload 1:1 recording — not yet implemented."),
+            2: lambda: print("\n[Placeholder] View 1:1 trends — not yet implemented."),
+            3: lambda: print("\n[Placeholder] Suggested follow-up topics — not yet implemented."),
+            4: lambda: print("\n[Placeholder] Milestone reminders — not yet implemented."),
+            5: run_direct_reports_menu,
+        },
+    )
+
+
+
 # --- Administer Direct Reports - ***Add/List Items*** ---
 
 
@@ -283,19 +299,6 @@ def run_direct_reports_menu() -> bool:
     return True
 
 
-def run_people_coaching_menu() -> None:
-    """Sub-menu for people management and coaching."""
-    _run_submenu(
-        PEOPLE_MENU,
-        6,
-        {
-            1: lambda: print("\n[Placeholder] Upload 1:1 recording — not yet implemented."),
-            2: lambda: print("\n[Placeholder] View 1:1 trends — not yet implemented."),
-            3: lambda: print("\n[Placeholder] Suggested follow-up topics — not yet implemented."),
-            4: lambda: print("\n[Placeholder] Milestone reminders — not yet implemented."),
-            5: run_direct_reports_menu,
-        },
-    )
 
 
 # --- Manager / Management Improvement ---
