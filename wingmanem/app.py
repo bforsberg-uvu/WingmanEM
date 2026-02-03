@@ -3,10 +3,31 @@ WingmanEM CLI prototype.
 Main application logic: menu-driven navigation and password protection.
 """
 
+from copyreg import clear_extension_cache
 import getpass
+from inspect import cleandoc
 import os
+from pdb import run
 import sys
 from collections.abc import Callable
+from dataclasses import dataclass
+from datetime import date, datetime
+from typing import Optional
+
+
+@dataclass
+class DirectReport:
+    """A direct report (person) with key details for 1:1s and milestones."""
+
+    firstName: str
+    lastName: str
+    birthdate: Optional[date] = None
+    hireDate: Optional[date] = None
+    partnerName: Optional[str] = None
+
+
+# Global list of direct reports
+direct_reports: list[DirectReport] = []
 
 
 # --- Configuration ---
@@ -67,9 +88,10 @@ def _menu_box(
 def _run_submenu(
     menu: str,
     max_option: int,
-    actions: dict[int, Callable[[], None]],
+    actions: dict[int, Callable[[], None | bool]],
 ) -> None:
-    """Display a sub-menu in a loop. Option max_option is Back; others run actions[choice]."""
+    """Display a sub-menu in a loop. Option max_option is Back; others run actions[choice].
+    If an action returns True, skip the 'Press Enter' pause (e.g. after returning from a sub-menu)."""
     prompt = f"Select an option (1–{max_option}): "
     while True:
         _clear_screen()
@@ -82,8 +104,9 @@ def _run_submenu(
         if choice == max_option:
             return
         if choice in actions:
-            actions[choice]()
-        _pause()
+            result = actions[choice]()
+            if result is not True:
+                _pause()
 
 
 # --- Authentication ---
@@ -101,7 +124,7 @@ MAIN_MENU = _menu_box(
     "                    WingmanEM — Main Menu",
     [
         ("  1. Project Creation & Estimation"),
-        ("  2. People Management & Coaching"),
+        ("  2. People Management & Coaching - ***Add/List Items***"),
         ("  3. Manager / Management Improvement"),
         ("  4. Exit"),
     ],
@@ -160,21 +183,117 @@ PEOPLE_MENU = _menu_box(
         ("  2. View 1:1 trends analysis", False),
         ("  3. Get suggested follow-up topics", False),
         ("  4. View milestone reminders (anniversaries, birthdays)", False),
-        ("  5. Back to main menu", True),
+        ("  5. Administer Direct Reports - ***Add/List Items***"),
+        ("  6. Back to main menu", True),
     ],
 )
+
+
+# --- Administer Direct Reports - ***Add/List Items*** ---
+
+
+def _parse_optional_date(prompt: str) -> date | None:
+    """Prompt for a date; empty input returns None. Accept YYYY-MM-DD or YYYYMMDD (no hyphens)."""
+    while True:
+        raw = input(prompt).strip()
+        if not raw:
+            return None
+        # Allow digits only (e.g. 19900515) or with hyphens/spaces
+        digits_only = raw.replace("-", "").replace(" ", "")
+        if digits_only.isdigit() and len(digits_only) == 8:
+            try:
+                return date(
+                    int(digits_only[0:4]),
+                    int(digits_only[4:6]),
+                    int(digits_only[6:8]),
+                )
+            except ValueError:
+                pass
+        else:
+            try:
+                return datetime.strptime(raw, "%Y-%m-%d").date()
+            except ValueError:
+                pass
+        print("  Invalid date. Use YYYY-MM-DD or YYYYMMDD (e.g. 2022-03-15 or 20220315). Try again.")
+
+
+def _add_direct_report() -> None:
+    """Prompt for direct report fields and append to direct_reports."""
+    print("\n--- Add Direct Report ---")
+    firstName = input("First name: ").strip() or "Unknown"
+    lastName = input("Last name: ").strip() or "Unknown"
+    birthdate = _parse_optional_date("Birthdate (YYYYMMDD or YYYY-MM-DD, or Enter to skip): ")
+    hireDate = _parse_optional_date("Hire date (YYYYMMDD or YYYY-MM-DD, or Enter to skip): ")
+    partnerName = input("Partner name (or Enter to skip): ").strip() or None
+    report = DirectReport(
+        firstName=firstName,
+        lastName=lastName,
+        birthdate=birthdate,
+        hireDate=hireDate,
+        partnerName=partnerName,
+    )
+    direct_reports.append(report)
+    print(f"\nAdded: {report.firstName} {report.lastName}")
+
+
+def _list_direct_reports() -> None:
+    """Display all direct reports in a table."""
+    if not direct_reports:
+        print("\nNo direct reports yet. Add one from the menu.")
+        return
+    # Column widths
+    w1, w2, w3, w4, w5 = 30, 30, 12, 12, 50
+    fmt = f"{{:{w1}}} {{:{w2}}} {{:{w3}}} {{:{w4}}} {{:{w5}}}"
+    sep = "-" * (w1 + w2 + w3 + w4 + w5 + 4)
+    _clear_screen()  
+    print()
+    print("Direct Reports")
+    print()
+    print(fmt.format("First Name", "Last Name", "Birthdate", "Hire Date", "Partner"))
+    print(sep)
+    for r in direct_reports:
+        bd = r.birthdate.isoformat() if r.birthdate else ""
+        hd = r.hireDate.isoformat() if r.hireDate else ""
+        pn = r.partnerName or ""
+        print(fmt.format(r.firstName[:w1], r.lastName[:w2], bd, hd, pn[:w5]))
+    print(sep)
+    print(f"Total: {len(direct_reports)}")
+
+
+DIRECT_REPORTS_MENU = _menu_box(
+    "Administer Direct Reports",
+    [
+        ("  1. Add direct report", True),
+        ("  2. List direct reports", True),
+        ("  3. Back to previous menu", True),
+    ],
+)
+
+
+def run_direct_reports_menu() -> bool:
+    """Sub-menu for administering direct reports (add/list). Returns True so caller skips pause."""
+    _run_submenu(
+        DIRECT_REPORTS_MENU,
+        3,
+        {
+            1: _add_direct_report,
+            2: _list_direct_reports,
+        },
+    )
+    return True
 
 
 def run_people_coaching_menu() -> None:
     """Sub-menu for people management and coaching."""
     _run_submenu(
         PEOPLE_MENU,
-        5,
+        6,
         {
             1: lambda: print("\n[Placeholder] Upload 1:1 recording — not yet implemented."),
             2: lambda: print("\n[Placeholder] View 1:1 trends — not yet implemented."),
             3: lambda: print("\n[Placeholder] Suggested follow-up topics — not yet implemented."),
             4: lambda: print("\n[Placeholder] Milestone reminders — not yet implemented."),
+            5: run_direct_reports_menu,
         },
     )
 
@@ -204,9 +323,10 @@ def run_management_improvement_menu() -> None:
 def main() -> None:
     """Run the CLI: authenticate, then main menu loop."""
     print("Welcome to WingmanEM.\n")
-    if not authenticate():
-        print("Authentication failed. Exiting.", file=sys.stderr)
-        sys.exit(1)
+# Will be used later:
+#    if not authenticate():
+#        print("Authentication failed. Exiting.", file=sys.stderr)
+#        sys.exit(1)
     try:
         while run_main_menu():
             _clear_screen()
