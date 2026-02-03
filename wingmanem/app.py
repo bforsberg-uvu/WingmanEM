@@ -242,7 +242,7 @@ def _list_direct_reports() -> None:
         print("\nNo direct reports yet. Add one from the menu.")
         return
     # Column widths
-    w1, w2, w3, w4, w5 = 30, 30, 12, 12, 50
+    w1, w2, w3, w4, w5 = 20, 20, 12, 12, 35
     fmt = f"{{:{w1}}} {{:{w2}}} {{:{w3}}} {{:{w4}}} {{:{w5}}}"
     sep = "-" * (w1 + w2 + w3 + w4 + w5 + 4)
     _clear_screen()  
