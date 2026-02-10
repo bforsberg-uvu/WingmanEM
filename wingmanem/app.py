@@ -17,125 +17,45 @@ try:
 except ImportError:
     MISTRAL_AVAILABLE = False
 
+
+# ============================================================================
+# GLOBAL CONFIG & CONSTANTS
+# ============================================================================
+
 # Direct_Reports table structure (project_plan.md): required id, first_name, last_name; rest optional
 DIRECT_REPORT_OPTIONAL_KEYS = (
     "street_address_1", "street_address_2", "city", "state", "zipcode", "country",
     "birthday", "hire_date", "current_role", "role_start_date", "partner_name",
 )
 
-# Global list of direct reports (each item is a dict mirroring Table Direct_Reports)
+# Global data
 direct_reports: list[dict[str, Any]] = []
-
-# Persistence file (same data as direct_reports)
-DIRECT_REPORTS_FILE = "direct_reports.json"
-
-# Persistence file for management tips
-MANAGEMENT_TIPS_FILE = "management_tips.json"
-
-# Global list of management tips
 management_tips: list[str] = []
 
+# Persistence files
+DIRECT_REPORTS_FILE = "direct_reports.json"
+MANAGEMENT_TIPS_FILE = "management_tips.json"
 
-def _next_direct_report_id() -> int:
-    """Return the next available id for a new direct report."""
-    max_id = 0
-    for r in direct_reports:
-        try:
-            max_id = max(max_id, int(r.get("id") or 0))
-        except (TypeError, ValueError):
-            pass
-    return max_id + 1
-
-
-def _normalize_direct_report(r: dict[str, Any]) -> dict[str, Any]:
-    """Ensure dict has Direct_Reports table keys; migrate old camelCase keys."""
-    key_map = {
-        "firstName": "first_name", "lastName": "last_name",
-        "birthdate": "birthday", "hireDate": "hire_date", "partnerName": "partner_name",
-    }
-    out: dict[str, Any] = {}
-    for k, v in r.items():
-        out[key_map.get(k, k)] = v
-    # Required: id (keep if present), first_name, last_name
-    if "first_name" not in out or out["first_name"] is None:
-        out["first_name"] = ""
-    if "last_name" not in out or out["last_name"] is None:
-        out["last_name"] = ""
-    # Optional
-    for key in DIRECT_REPORT_OPTIONAL_KEYS:
-        if key not in out:
-            out[key] = None
-    return out
+# ANSI colors for menu items
+_MENU_COLOR_BLACK = "\033[30m"
+_MENU_COLOR_RED = "\033[31m"
+_MENU_COLOR_DISABLED = "\033[2;37m"  # very light gray (dim white)
+_MENU_COLOR_RESET = "\033[0m"
+_MENU_BOLD = "\033[1m"
 
 
-# --- Persistence ---
-def _load_direct_reports() -> None:
-    """Read direct_reports from file into the global list; normalize keys and assign missing ids."""
-    global direct_reports
-    if not os.path.isfile(DIRECT_REPORTS_FILE):
-        direct_reports = []
-        return
-    try:
-        with open(DIRECT_REPORTS_FILE, encoding="utf-8") as f:
-            data = json.load(f)
-        raw = data if isinstance(data, list) else []
-        direct_reports = [_normalize_direct_report(r) for r in raw if isinstance(r, dict)]
-        next_id = _next_direct_report_id()
-        for r in direct_reports:
-            try:
-                if int(r.get("id") or 0) <= 0:
-                    r["id"] = next_id
-                    next_id += 1
-            except (TypeError, ValueError):
-                r["id"] = next_id
-                next_id += 1
-    except (json.JSONDecodeError, OSError):
-        direct_reports = []
+# ============================================================================
+# CONFIGURATION & UTILITY FUNCTIONS
+# ============================================================================
 
-
-def _save_direct_reports() -> None:
-    """Write the global direct_reports list to file."""
-    try:
-        with open(DIRECT_REPORTS_FILE, "w", encoding="utf-8") as f:
-            json.dump(direct_reports, f, indent=2)
-    except OSError as e:
-        print(f"Could not save direct reports: {e}", file=sys.stderr)
-
-
-def _load_management_tips() -> None:
-    """Read management tips from file into the global list."""
-    global management_tips
-    if not os.path.isfile(MANAGEMENT_TIPS_FILE):
-        management_tips = []
-        return
-    try:
-        with open(MANAGEMENT_TIPS_FILE, encoding="utf-8") as f:
-            data = json.load(f)
-        if isinstance(data, list):
-            management_tips = [str(t).strip() for t in data if str(t).strip()]
-        else:
-            management_tips = []
-    except (json.JSONDecodeError, OSError):
-        management_tips = []
-
-
-def _save_management_tips() -> None:
-    """Write the global management_tips list to file."""
-    try:
-        with open(MANAGEMENT_TIPS_FILE, "w", encoding="utf-8") as f:
-            json.dump(management_tips, f, indent=2)
-    except OSError as e:
-        print(f"Could not save management tips: {e}", file=sys.stderr)
-
-
-# --- Configuration ---
 def _get_expected_password() -> str:
     """Expected password from environment; defaults to 'wingman' for local dev."""
     return os.environ.get("WINGMANEM_PASSWORD", "p")
 
 
 def _get_mistral_api_key() -> str | None:
-    return "579aUFUawlFEvqF6aVXIp6YjxYZvyi3O"
+    """Get Mistral API key from environment."""
+    return os.environ.get("MISTRAL_API_KEY")
 
 
 def _clear_screen() -> None:
@@ -160,14 +80,6 @@ def _pause() -> None:
     input("\nPress Enter to continue...")
 
 
-# ANSI colors for menu items (default black; optional red)
-_MENU_COLOR_BLACK = "\033[30m"
-_MENU_COLOR_RED = "\033[31m"
-_MENU_COLOR_DISABLED = "\033[2;37m"  # very light gray (dim white)
-_MENU_COLOR_RESET = "\033[0m"
-_MENU_BOLD = "\033[1m"
-
-
 def _wrap_text(text: str, width: int) -> list[str]:
     """Wrap text to fit within width, breaking at word boundaries. Returns list of lines."""
     if not text.strip():
@@ -190,6 +102,10 @@ def _wrap_text(text: str, width: int) -> list[str]:
             lines.append(" ".join(current))
     return lines
 
+
+# ============================================================================
+# MENU & UI FUNCTIONS
+# ============================================================================
 
 def _menu_box(
     title: str,
@@ -280,213 +196,123 @@ def _run_submenu(
                 _pause()
 
 
-# --- Authentication ---
-def authenticate() -> bool:
-    """Prompt for password; return True if correct."""
-    try:
-        password = getpass.getpass("Password: ")
-        return password == _get_expected_password()
-    except (EOFError, KeyboardInterrupt):
-        return False
+# ============================================================================
+# DIRECT REPORTS: Data Management
+# ============================================================================
 
-
-# --- Main menu ---
-def _get_latest_management_tip() -> str:
-    """Return the most recent management tip, or a placeholder if none."""
-    if management_tips:
-        return management_tips[-1]
-    return "No tip yet. Generate one from Mistral AI."
-
-
-def _build_main_menu() -> str:
-    """Build the main menu with the latest management tip."""
-    tip = _get_latest_management_tip()
-    return _menu_box(
-        "                    WingmanEM — Main Menu",
-        [
-            ("  1. Project Creation & Estimation"),
-            ("  2. People Management & Coaching", True, True),  # red
-            ("  3. Exit"),
-        ],
-        middle=[
-            ("DAILY MANAGEMENT TIP:", f" {tip}  "),
-            "",
-            "",
-            (
-                "Instructions For Dr. Riskas:",
-                " Navigate to 'Administer Direct Reports' (select red options) to see code "
-                "refactor in action.  There is an option to create direct reports from Mistral AI "
-                "so you don't have to manually enter them. "
-                "When a direct report is added or deleted, the data is "
-                "saved to a file (direct_reports.json) and read back in when the program "
-                "starts up. So the data will persist between program runs.  ",
-            ),
-            "",
-        ],
-        middle_position="bottom",
-    )
-
-
-def run_main_menu() -> bool:
-    """Show main menu and return chosen option (1–4, or 9 for hidden developer menu). Returns False to exit."""
-    _clear_screen()
-    print(_build_main_menu())
-    choice = _prompt_choice("Select an option (1–3): ", 9)
-    if choice == 0:
-        print("Invalid option. Please enter 1, 2, or 3.")
-        _pause()
-        return True
-    if choice == 9:
-        run_developer_menu()
-        return True
-    if choice in (4, 5, 6, 7, 8):
-        print("Invalid option. Please enter 1, 2, or 3.")
-        _pause()
-        return True
-    if choice == 3:
-        return False
-    if choice == 1:
-        run_project_estimation_menu()
-    elif choice == 2:
-        run_people_coaching_menu()
-    return True
-
-
-# --- Developer menu (hidden; chosen with 9 on main menu) ---
-DEVELOPER_MENU = _menu_box(
-    "Developer menu",
-    [
-        ("  1. Back to main menu", True),
-    ],
-)
-
-
-def run_developer_menu() -> bool:
-    """Developer menu; returns True so caller skips pause."""
-    _run_submenu(
-        DEVELOPER_MENU,
-        1,
-        {},
-    )
-    return True
-
-
-# --- Project Creation & Estimation ---
-PROJECT_MENU = _menu_box(
-    "           Project Creation & Estimation",
-    [
-        ("  1. Input project spec (get structured breakdown)", False),
-        ("  2. Sync breakdown to Jira", False),
-        ("  3. Ask about project status (natural language)", False),
-        ("  4. Back to main menu", True),
-    ],
-)
-
-
-def run_project_estimation_menu() -> None:
-    """Sub-menu for project creation and estimation."""
-    _run_submenu(
-        PROJECT_MENU,
-        4,
-        {
-            1: lambda: print("\n[Placeholder] Input project spec — not yet implemented."),
-            2: lambda: print("\n[Placeholder] Sync to Jira — not yet implemented."),
-            3: lambda: print("\n[Placeholder] Ask about project status — not yet implemented."),
-        },
-    )
-
-
-# --- People Management & Coaching ---
-PEOPLE_MENU = _menu_box(
-    "           People Management & Coaching",
-    [
-        ("  1. Upload 1:1 recording (summarize & action items)", False),
-        ("  2. View 1:1 trends analysis", False),
-        ("  3. Get suggested follow-up topics", False),
-            ("  4. View milestone reminders (anniversaries, birthdays)", True),
-        ("  5. Administer Direct Reports", True, True),  # red
-        ("  6. Back to main menu", True),
-    ],
-)
-
-
-def _view_milestone_reminders() -> None | bool:
-    """Show upcoming birthdays and anniversaries for direct reports."""
-    today = date.today()
-
-    def _print_upcoming(range_days: int) -> None:
-        _clear_screen()
-        print("\n--- Milestone Reminders ---\n")
-        print(f"Showing the next {range_days} days.\n")
-        upcoming = []
-        for r in direct_reports:
-            # Birthday
-            bd = r.get("birthday")
-            if bd:
-                try:
-                    bd_date = datetime.strptime(bd, "%Y-%m-%d").date()
-                    next_bd = bd_date.replace(year=today.year)
-                    days_until = (next_bd - today).days
-                    if days_until < 0:
-                        next_bd = bd_date.replace(year=today.year + 1)
-                        days_until = (next_bd - today).days
-                    if 0 <= days_until <= range_days:
-                        upcoming.append((days_until, f"Birthday: {r['first_name']} {r['last_name']} on {next_bd.strftime('%Y-%m-%d')} ({days_until} days)", bd_date))
-                except Exception:
-                    pass
-            # Work anniversary
-            hd = r.get("hire_date")
-            if hd:
-                try:
-                    hd_date = datetime.strptime(hd, "%Y-%m-%d").date()
-                    anniv = hd_date.replace(year=today.year)
-                    days_until = (anniv - today).days
-                    if days_until < 0:
-                        anniv = hd_date.replace(year=today.year + 1)
-                        days_until = (anniv - today).days
-                    if 0 <= days_until <= range_days:
-                        years = (anniv.year - hd_date.year)
-                        upcoming.append((days_until, f"Anniversary: {r['first_name']} {r['last_name']} ({years} years) on {anniv.strftime('%Y-%m-%d')} ({days_until} days)", hd_date))
-                except Exception:
-                    pass
-        if not upcoming:
-            print(f"No upcoming birthdays or anniversaries in the next {range_days} days.")
-        else:
-            upcoming.sort()
-            for _, msg, _ in upcoming:
-                print(msg)
-
-    _print_upcoming(30)
-    while True:
-        raw = input("\nView further out? Enter days (e.g. 60, 90, 180) or press Enter to return: ").strip()
-        if raw == "":
-            return True
+def _next_direct_report_id() -> int:
+    """Return the next available id for a new direct report."""
+    max_id = 0
+    for r in direct_reports:
         try:
-            range_days = int(raw)
-            if range_days <= 30:
-                print("Please enter a number greater than 30.")
-                continue
-            _print_upcoming(range_days)
-        except ValueError:
-            print("Invalid input. Enter a number of days or press Enter to return.")
-
-def run_people_coaching_menu() -> None:
-    """Sub-menu for people management and coaching."""
-    _run_submenu(
-        PEOPLE_MENU,
-        6,
-        {
-            1: lambda: print("\n[Placeholder] Upload 1:1 recording — not yet implemented."),
-            2: lambda: print("\n[Placeholder] View 1:1 trends — not yet implemented."),
-            3: lambda: print("\n[Placeholder] Suggested follow-up topics — not yet implemented."),
-            4: _view_milestone_reminders,
-            5: run_direct_reports_menu,
-        },
-    )
+            max_id = max(max_id, int(r.get("id") or 0))
+        except (TypeError, ValueError):
+            pass
+    return max_id + 1
 
 
+def _normalize_direct_report(r: dict[str, Any]) -> dict[str, Any]:
+    """Ensure dict has Direct_Reports table keys; migrate old camelCase keys."""
+    key_map = {
+        "firstName": "first_name", "lastName": "last_name",
+        "birthdate": "birthday", "hireDate": "hire_date", "partnerName": "partner_name",
+    }
+    out: dict[str, Any] = {}
+    for k, v in r.items():
+        out[key_map.get(k, k)] = v
+    # Required: id (keep if present), first_name, last_name
+    if "first_name" not in out or out["first_name"] is None:
+        out["first_name"] = ""
+    if "last_name" not in out or out["last_name"] is None:
+        out["last_name"] = ""
+    # Optional
+    for key in DIRECT_REPORT_OPTIONAL_KEYS:
+        if key not in out:
+            out[key] = None
+    return out
 
-# --- Administer Direct Reports ---
+
+def _load_direct_reports() -> None:
+    """Read direct_reports from file into the global list; normalize keys and assign missing ids."""
+    global direct_reports
+    if not os.path.isfile(DIRECT_REPORTS_FILE):
+        direct_reports = []
+        return
+    try:
+        with open(DIRECT_REPORTS_FILE, encoding="utf-8") as f:
+            data = json.load(f)
+        raw = data if isinstance(data, list) else []
+        direct_reports = [_normalize_direct_report(r) for r in raw if isinstance(r, dict)]
+        next_id = _next_direct_report_id()
+        for r in direct_reports:
+            try:
+                if int(r.get("id") or 0) <= 0:
+                    r["id"] = next_id
+                    next_id += 1
+            except (TypeError, ValueError):
+                r["id"] = next_id
+                next_id += 1
+    except (json.JSONDecodeError, OSError):
+        direct_reports = []
+
+
+def _save_direct_reports() -> None:
+    """Write the global direct_reports list to file."""
+    try:
+        with open(DIRECT_REPORTS_FILE, "w", encoding="utf-8") as f:
+            json.dump(direct_reports, f, indent=2)
+    except OSError as e:
+        print(f"Could not save direct reports: {e}", file=sys.stderr)
+
+
+# ============================================================================
+# DIRECT REPORTS: Display & User Operations
+# ============================================================================
+
+_LIST_DIRECT_REPORT_COLUMNS = (
+    ("id", "ID", 5),
+    ("first_name", "First Name", 14),
+    ("last_name", "Last Name", 14),
+    ("street_address_1", "Street 1", 20),
+    ("city", "City", 14),
+    ("state", "State", 8),
+    ("zipcode", "Zipcode", 10),
+    ("birthday", "Birthday", 12),
+    ("hire_date", "Hire Date", 12),
+    ("current_role", "Current Role", 18),
+    ("role_start_date", "Role Start", 12),
+    ("partner_name", "Partner", 14),
+)
+
+
+def _list_direct_reports() -> None:
+    """Display all direct reports in a table with every DirectReport field."""
+    if not direct_reports:
+        print("\nNo direct reports yet. Add one from the menu.")
+        return
+    cols = _LIST_DIRECT_REPORT_COLUMNS
+    # Build format: first column right-aligned (No.), rest left-aligned
+    fmt_parts = [f"{{:>{cols[0][2]}}}"] + [f"{{:{c[2]}}}" for c in cols[1:]]
+    fmt = " ".join(fmt_parts)
+    total_width = sum(c[2] for c in cols) + len(cols) - 1
+    sep = "-" * total_width
+    print()
+    print("Direct Reports")
+    print()
+    headers = [c[1] for c in cols]
+    print(fmt.format(*headers))
+    print(sep)
+    for r in direct_reports:
+        row = []
+        for key, _header, width in cols:
+            val = r.get(key)
+            if val is None:
+                val = ""
+            s = str(val)[:width] if val else ""
+            row.append(s)
+        print(fmt.format(*row))
+    print(sep)
+    print(f"Total: {len(direct_reports)}")
 
 
 def _parse_optional_date(prompt: str) -> date | None:
@@ -547,53 +373,6 @@ def _add_direct_report() -> None:
     _list_direct_reports()
 
 
-# Table column order and headers for List Direct Reports (excludes street_address_2, country)
-_LIST_DIRECT_REPORT_COLUMNS = (
-    ("id", "ID", 5),
-    ("first_name", "First Name", 14),
-    ("last_name", "Last Name", 14),
-    ("street_address_1", "Street 1", 20),
-    ("city", "City", 14),
-    ("state", "State", 8),
-    ("zipcode", "Zipcode", 10),
-    ("birthday", "Birthday", 12),
-    ("hire_date", "Hire Date", 12),
-    ("current_role", "Current Role", 18),
-    ("role_start_date", "Role Start", 12),
-    ("partner_name", "Partner", 14),
-)
-
-
-def _list_direct_reports() -> None:
-    """Display all direct reports in a table with every DirectReport field."""
-    if not direct_reports:
-        print("\nNo direct reports yet. Add one from the menu.")
-        return
-    cols = _LIST_DIRECT_REPORT_COLUMNS
-    # Build format: first column right-aligned (No.), rest left-aligned
-    fmt_parts = [f"{{:>{cols[0][2]}}}"] + [f"{{:{c[2]}}}" for c in cols[1:]]
-    fmt = " ".join(fmt_parts)
-    total_width = sum(c[2] for c in cols) + len(cols) - 1
-    sep = "-" * total_width
-    print()
-    print("Direct Reports")
-    print()
-    headers = [c[1] for c in cols]
-    print(fmt.format(*headers))
-    print(sep)
-    for r in direct_reports:
-        row = []
-        for key, _header, width in cols:
-            val = r.get(key)
-            if val is None:
-                val = ""
-            s = str(val)[:width] if val else ""
-            row.append(s)
-        print(fmt.format(*row))
-    print(sep)
-    print(f"Total: {len(direct_reports)}")
-
-
 def _delete_direct_report() -> None | bool:
     """Prompt for the ID of the direct report to delete, remove it, save to file."""
     _list_direct_reports()
@@ -618,7 +397,7 @@ def _delete_direct_report() -> None | bool:
 def _generate_direct_reports_with_ai() -> None:
     """Generate realistic direct reports using Mistral AI and add them to the list."""
     if not MISTRAL_AVAILABLE:
-        print("\nMistral AI is not installed. Install it with: pip install mistral-ai")
+        print("\nMistral AI is not installed. Install it with: pip install mistralai")
         return
     
     api_key = _get_mistral_api_key()
@@ -716,6 +495,252 @@ def _purge_direct_reports() -> None | bool:
     return True
 
 
+# ============================================================================
+# MANAGEMENT TIPS: Data Management
+# ============================================================================
+
+def _load_management_tips() -> None:
+    """Read management tips from file into the global list."""
+    global management_tips
+    if not os.path.isfile(MANAGEMENT_TIPS_FILE):
+        management_tips = []
+        return
+    try:
+        with open(MANAGEMENT_TIPS_FILE, encoding="utf-8") as f:
+            data = json.load(f)
+        if isinstance(data, list):
+            management_tips = [str(t).strip() for t in data if str(t).strip()]
+        else:
+            management_tips = []
+    except (json.JSONDecodeError, OSError):
+        management_tips = []
+
+
+def _save_management_tips() -> None:
+    """Write the global management_tips list to file."""
+    try:
+        with open(MANAGEMENT_TIPS_FILE, "w", encoding="utf-8") as f:
+            json.dump(management_tips, f, indent=2)
+    except OSError as e:
+        print(f"Could not save management tips: {e}", file=sys.stderr)
+
+
+def _get_latest_management_tip() -> str:
+    """Return the most recent management tip, or a placeholder if none."""
+    if management_tips:
+        return management_tips[-1]
+    return "No tip yet. Generate one from Mistral AI."
+
+
+# ============================================================================
+# MILESTONE REMINDERS
+# ============================================================================
+
+def _view_milestone_reminders() -> None | bool:
+    """Show upcoming birthdays and anniversaries for direct reports."""
+    today = date.today()
+
+    def _print_upcoming(range_days: int) -> None:
+        _clear_screen()
+        print("\n--- Milestone Reminders ---\n")
+        print(f"Showing the next {range_days} days.\n")
+        upcoming = []
+        for r in direct_reports:
+            # Birthday
+            bd = r.get("birthday")
+            if bd:
+                try:
+                    bd_date = datetime.strptime(bd, "%Y-%m-%d").date()
+                    next_bd = bd_date.replace(year=today.year)
+                    days_until = (next_bd - today).days
+                    if days_until < 0:
+                        next_bd = bd_date.replace(year=today.year + 1)
+                        days_until = (next_bd - today).days
+                    if 0 <= days_until <= range_days:
+                        upcoming.append((days_until, f"Birthday: {r['first_name']} {r['last_name']} on {next_bd.strftime('%Y-%m-%d')} ({days_until} days)", bd_date))
+                except Exception:
+                    pass
+            # Work anniversary
+            hd = r.get("hire_date")
+            if hd:
+                try:
+                    hd_date = datetime.strptime(hd, "%Y-%m-%d").date()
+                    anniv = hd_date.replace(year=today.year)
+                    days_until = (anniv - today).days
+                    if days_until < 0:
+                        anniv = hd_date.replace(year=today.year + 1)
+                        days_until = (anniv - today).days
+                    if 0 <= days_until <= range_days:
+                        years = (anniv.year - hd_date.year)
+                        upcoming.append((days_until, f"Anniversary: {r['first_name']} {r['last_name']} ({years} years) on {anniv.strftime('%Y-%m-%d')} ({days_until} days)", hd_date))
+                except Exception:
+                    pass
+        if not upcoming:
+            print(f"No upcoming birthdays or anniversaries in the next {range_days} days.")
+        else:
+            upcoming.sort()
+            for _, msg, _ in upcoming:
+                print(msg)
+
+    _print_upcoming(30)
+    while True:
+        raw = input("\nView further out? Enter days (e.g. 60, 90, 180) or press Enter to return: ").strip()
+        if raw == "":
+            return True
+        try:
+            range_days = int(raw)
+            if range_days <= 30:
+                print("Please enter a number greater than 30.")
+                continue
+            _print_upcoming(range_days)
+        except ValueError:
+            print("Invalid input. Enter a number of days or press Enter to return.")
+
+
+# ============================================================================
+# MENUS: Main Menu
+# ============================================================================
+
+def _build_main_menu() -> str:
+    """Build the main menu with the latest management tip."""
+    tip = _get_latest_management_tip()
+    return _menu_box(
+        "                    WingmanEM — Main Menu",
+        [
+            ("  1. Project Creation & Estimation"),
+            ("  2. People Management & Coaching", True, True),  # red
+            ("  3. Exit"),
+        ],
+        middle=[
+            ("DAILY MANAGEMENT TIP:", f" {tip}  "),
+            "",
+            "",
+            (
+                "Instructions For Dr. Riskas:",
+                " Navigate to 'Administer Direct Reports' (select red options) to see code "
+                "refactor in action.  There is an option to create direct reports from Mistral AI "
+                "so you don't have to manually enter them. "
+                "When a direct report is added or deleted, the data is "
+                "saved to a file (direct_reports.json) and read back in when the program "
+                "starts up. So the data will persist between program runs.  ",
+            ),
+            "",
+        ],
+        middle_position="bottom",
+    )
+
+
+def run_main_menu() -> bool:
+    """Show main menu and return chosen option (1–3, or 9 for hidden developer menu). Returns False to exit."""
+    _clear_screen()
+    print(_build_main_menu())
+    choice = _prompt_choice("Select an option (1–3): ", 9)
+    if choice == 0:
+        print("Invalid option. Please enter 1, 2, or 3.")
+        _pause()
+        return True
+    if choice == 9:
+        run_developer_menu()
+        return True
+    if choice in (4, 5, 6, 7, 8):
+        print("Invalid option. Please enter 1, 2, or 3.")
+        _pause()
+        return True
+    if choice == 3:
+        return False
+    if choice == 1:
+        run_project_estimation_menu()
+    elif choice == 2:
+        run_people_coaching_menu()
+    return True
+
+
+# ============================================================================
+# MENUS: Developer Menu
+# ============================================================================
+
+DEVELOPER_MENU = _menu_box(
+    "Developer menu",
+    [
+        ("  1. Back to main menu", True),
+    ],
+)
+
+
+def run_developer_menu() -> bool:
+    """Developer menu; returns True so caller skips pause."""
+    _run_submenu(
+        DEVELOPER_MENU,
+        1,
+        {},
+    )
+    return True
+
+
+# ============================================================================
+# MENUS: Project Creation & Estimation
+# ============================================================================
+
+PROJECT_MENU = _menu_box(
+    "           Project Creation & Estimation",
+    [
+        ("  1. Input project spec (get structured breakdown)", False),
+        ("  2. Sync breakdown to Jira", False),
+        ("  3. Ask about project status (natural language)", False),
+        ("  4. Back to main menu", True),
+    ],
+)
+
+
+def run_project_estimation_menu() -> None:
+    """Sub-menu for project creation and estimation."""
+    _run_submenu(
+        PROJECT_MENU,
+        4,
+        {
+            1: lambda: print("\n[Placeholder] Input project spec — not yet implemented."),
+            2: lambda: print("\n[Placeholder] Sync to Jira — not yet implemented."),
+            3: lambda: print("\n[Placeholder] Ask about project status — not yet implemented."),
+        },
+    )
+
+
+# ============================================================================
+# MENUS: People Management & Coaching
+# ============================================================================
+
+PEOPLE_MENU = _menu_box(
+    "           People Management & Coaching",
+    [
+        ("  1. Upload 1:1 recording (summarize & action items)", False),
+        ("  2. View 1:1 trends analysis", False),
+        ("  3. Get suggested follow-up topics", False),
+        ("  4. View milestone reminders (anniversaries, birthdays)", True),
+        ("  5. Administer Direct Reports", True, True),  # red
+        ("  6. Back to main menu", True),
+    ],
+)
+
+
+def run_people_coaching_menu() -> None:
+    """Sub-menu for people management and coaching."""
+    _run_submenu(
+        PEOPLE_MENU,
+        6,
+        {
+            1: lambda: print("\n[Placeholder] Upload 1:1 recording — not yet implemented."),
+            2: lambda: print("\n[Placeholder] View 1:1 trends — not yet implemented."),
+            3: lambda: print("\n[Placeholder] Suggested follow-up topics — not yet implemented."),
+            4: _view_milestone_reminders,
+            5: run_direct_reports_menu,
+        },
+    )
+
+
+# ============================================================================
+# MENUS: Administer Direct Reports
+# ============================================================================
+
 DIRECT_REPORTS_MENU = _menu_box(
     "Administer Direct Reports",
     [
@@ -748,9 +773,23 @@ def run_direct_reports_menu() -> bool:
     return True
 
 
+# ============================================================================
+# AUTHENTICATION
+# ============================================================================
+
+def authenticate() -> bool:
+    """Prompt for password; return True if correct."""
+    try:
+        password = getpass.getpass("Password: ")
+        return password == _get_expected_password()
+    except (EOFError, KeyboardInterrupt):
+        return False
 
 
-# --- Entry point ---
+# ============================================================================
+# ENTRY POINT
+# ============================================================================
+
 def main() -> None:
     """Run the CLI: load data, then main menu loop."""
     print("Welcome to WingmanEM.\n")
