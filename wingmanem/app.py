@@ -1,5 +1,5 @@
 """
-WingmanEM CLI prototype.
+WingmanEM CLI prototype Chunk #2
 Main application logic: menu-driven navigation and password protection.
 """
 
