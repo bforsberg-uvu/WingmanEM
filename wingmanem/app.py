@@ -259,10 +259,17 @@ MAIN_MENU = _menu_box(
 
 
 def run_main_menu() -> bool:
-    """Show main menu and return chosen option (1–4). Returns False to exit."""
+    """Show main menu and return chosen option (1–4, or 9 for hidden developer menu). Returns False to exit."""
     print(MAIN_MENU)
-    choice = _prompt_choice("Select an option (1–4): ", 4)
+    choice = _prompt_choice("Select an option (1–4): ", 9)
     if choice == 0:
+        print("Invalid option. Please enter 1, 2, 3, or 4.")
+        _pause()
+        return True
+    if choice == 9:
+        run_developer_menu()
+        return True
+    if choice in (5, 6, 7, 8):
         print("Invalid option. Please enter 1, 2, 3, or 4.")
         _pause()
         return True
@@ -274,6 +281,25 @@ def run_main_menu() -> bool:
         run_people_coaching_menu()
     elif choice == 3:
         run_management_improvement_menu()
+    return True
+
+
+# --- Developer menu (hidden; chosen with 9 on main menu) ---
+DEVELOPER_MENU = _menu_box(
+    "Developer menu",
+    [
+        ("  1. Back to main menu", True),
+    ],
+)
+
+
+def run_developer_menu() -> bool:
+    """Developer menu; returns True so caller skips pause."""
+    _run_submenu(
+        DEVELOPER_MENU,
+        1,
+        {},
+    )
     return True
 
 
