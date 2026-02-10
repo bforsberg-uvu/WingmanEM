@@ -28,6 +28,7 @@ build/
 
 # App data
 direct_reports.json
+management_tips.json
 
 # OS
 .DS_Store
