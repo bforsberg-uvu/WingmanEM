@@ -1,6 +1,11 @@
 # WingmanEM
 
-A Python project.
+## To execute the program:
+## python app.py
+
+## ----------------------------------------
+
+## Other possibly helpful instructions
 
 ## Setup
 
@@ -15,3 +20,7 @@ pip install -r requirements.txt
 ```bash
 python -m wingmanem
 ```
+
+
+
+
