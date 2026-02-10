@@ -235,6 +235,9 @@ def _parse_optional_date(prompt: str) -> date | None:
 
 def _add_direct_report() -> None:
     """Prompt for direct report fields and append to direct_reports."""
+    _clear_screen()
+    print()
+    _content_of_direct_reports()
     print("\n--- Add Direct Report ---")
     firstName = input("First name: ").strip() or "Unknown"
     lastName = input("Last name: ").strip() or "Unknown"
@@ -250,10 +253,18 @@ def _add_direct_report() -> None:
     )
     direct_reports.append(report)
     print(f"\nAdded: {report.firstName} {report.lastName}")
+    _content_of_direct_reports()
+
+
+def _content_of_direct_reports() -> None:
+    """Display the direct_reports list (table or empty message)."""
+    print("Content of direct_reports:") 
+    print(direct_reports)
 
 
 def _list_direct_reports() -> None:
     """Display all direct reports in a table."""
+    _clear_screen() 
     if not direct_reports:
         print("\nNo direct reports yet. Add one from the menu.")
         return
@@ -263,7 +274,7 @@ def _list_direct_reports() -> None:
     sep = "-" * (w1 + w2 + w3 + w4 + w5 + 4)
     _clear_screen()  
     print()
-    print("Direct Reports")
+    print("Direct Reports:")
     print()
     print(fmt.format("First Name", "Last Name", "Birthdate", "Hire Date", "Partner"))
     print(sep)
