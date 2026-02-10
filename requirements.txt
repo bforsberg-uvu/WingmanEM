@@ -2,3 +2,4 @@
 # Chunk #1–2: CLI prototype and direct-reports persistence use the Python standard library (e.g. json).
 # Add package names and versions here as features are added, e.g.:
 # requests>=2.28.0
+mistralai

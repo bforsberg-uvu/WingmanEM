@@ -11,6 +11,12 @@ from collections.abc import Callable
 from datetime import date, datetime
 from typing import Any
 
+try:
+    from mistralai import Mistral
+    MISTRAL_AVAILABLE = True
+except ImportError:
+    MISTRAL_AVAILABLE = False
+
 # Direct_Reports table structure (project_plan.md): required id, first_name, last_name; rest optional
 DIRECT_REPORT_OPTIONAL_KEYS = (
     "street_address_1", "street_address_2", "city", "state", "zipcode", "country",
@@ -94,6 +100,10 @@ def _save_direct_reports() -> None:
 def _get_expected_password() -> str:
     """Expected password from environment; defaults to 'wingman' for local dev."""
     return os.environ.get("WINGMANEM_PASSWORD", "p")
+
+
+def _get_mistral_api_key() -> str | None:
+    return "579aUFUawlFEvqF6aVXIp6YjxYZvyi3O"
 
 
 def _clear_screen() -> None:
@@ -249,7 +259,9 @@ MAIN_MENU = _menu_box(
         (
             "Instructions For Dr. Riskas:",
             " Navigate to 'Administer Direct Reports' (select red options) to see code "
-            "refactor in action. When a direct report is added or deleted, the data is "
+            "refactor in action.  There is an option to create direct reports from Mistral AI "
+            "so you don't have to manually enter them. "
+            "When a direct report is added or deleted, the data is "
             "saved to a file (direct_reports.json) and read back in when the program "
             "starts up. So the data will persist between program runs.",
         ),
@@ -260,6 +272,7 @@ MAIN_MENU = _menu_box(
 
 def run_main_menu() -> bool:
     """Show main menu and return chosen option (1–4, or 9 for hidden developer menu). Returns False to exit."""
+    _clear_screen()
     print(MAIN_MENU)
     choice = _prompt_choice("Select an option (1–4): ", 9)
     if choice == 0:
@@ -487,27 +500,135 @@ def _delete_direct_report() -> None | bool:
         print("Invalid input. Enter the ID number (e.g. from the list above).")
 
 
+def _generate_direct_reports_with_ai() -> None:
+    """Generate realistic direct reports using Mistral AI and add them to the list."""
+    if not MISTRAL_AVAILABLE:
+        print("\nMistral AI is not installed. Install it with: pip install mistral-ai")
+        return
+    
+    api_key = _get_mistral_api_key()
+    if not api_key:
+        print("\nMistral API key not found. Set MISTRAL_API_KEY environment variable.")
+        return
+    
+    _clear_screen()
+    print("\n--- Generate Direct Reports with Mistral AI ---")
+    try:
+        num_reports = input("How many direct reports to generate? (1-10, default 3): ").strip()
+        num = int(num_reports) if num_reports else 3
+        if not (1 <= num <= 10):
+            print("Please enter a number between 1 and 10.")
+            return
+    except ValueError:
+        print("Invalid input. Using default of 3 reports.")
+        num = 3
+    
+    print(f"\nGenerating {num} direct reports using Mistral AI...\n")
+    
+    try:
+        client = Mistral(api_key=api_key)
+        prompt = f"""Generate {num} realistic direct reports for a manager. Each report should have a diverse, realistic background.
+        
+For each person, provide ONLY valid JSON (no markdown, no extra text) in this exact format:
+{{
+  "first_name": "FirstName",
+  "last_name": "LastName",
+  "street_address_1": "123 Main St",
+  "street_address_2": "Apt 4B",
+  "city": "CityName",
+  "state": "ST",
+  "zipcode": "12345",
+  "country": "USA",
+  "birthday": "1985-06-15",
+  "hire_date": "2020-01-10",
+  "current_role": "Senior Engineer",
+  "role_start_date": "2023-03-01",
+  "partner_name": "Partner Name or null"
+}}
+
+Provide {num} JSON objects, one per line (not in an array). Ensure all dates are in YYYY-MM-DD format."""
+        
+        message = client.chat.complete(
+            model="mistral-large-latest",
+            messages=[{"role": "user", "content": prompt}]
+        )
+        
+        response_text = message.choices[0].message.content.strip()
+        lines = response_text.split("\n")
+        
+        added_count = 0
+        for line in lines:
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+            try:
+                data = json.loads(line)
+                report = _normalize_direct_report({
+                    "id": _next_direct_report_id(),
+                    **data
+                })
+                direct_reports.append(report)
+                added_count += 1
+                print(f"  ✓ Added: {report['first_name']} {report['last_name']}")
+            except (json.JSONDecodeError, ValueError) as e:
+                pass  # Skip malformed lines
+        
+        if added_count > 0:
+            _save_direct_reports()
+            print(f"\nSuccessfully added {added_count} direct reports.")
+        else:
+            print("\nCould not parse any valid direct reports from the response.")
+    
+    except Exception as e:
+        print(f"Error calling Mistral AI: {e}")
+        print("\nMake sure your MISTRAL_API_KEY is valid.")
+
+
+def _purge_direct_reports() -> None | bool:
+    """Purge all direct reports after confirmation."""
+    _list_direct_reports()
+    if not direct_reports:
+        print("\nNo direct reports to purge.")
+        return True
+    confirm = input("\nAre you sure you want to delete ALL direct reports? (yes/no): ").strip().lower()
+    if confirm == "yes":
+        count = len(direct_reports)
+        direct_reports.clear()
+        _save_direct_reports()
+        print(f"\nPurged {count} direct report(s).")
+    else:
+        print("\nPurge cancelled.")
+    return True
+
+
 DIRECT_REPORTS_MENU = _menu_box(
     "Administer Direct Reports",
     [
         ("  1. Add direct report", True),
         ("  2. List direct reports", True),
         ("  3. Delete a direct report", True),
-        ("  4. Back to previous menu", True),
+        ("  4. Generate direct reports with Mistral AI", MISTRAL_AVAILABLE),
+        ("  5. Purge all direct reports", True),
+        ("  6. Back to previous menu", True),
     ],
 )
 
 
 def run_direct_reports_menu() -> bool:
-    """Sub-menu for administering direct reports (add/list/delete). Returns True so caller skips pause."""
+    """Sub-menu for administering direct reports (add/list/delete/generate/purge). Returns True so caller skips pause."""
+    actions = {
+        1: _add_direct_report,
+        2: _list_direct_reports,
+        3: _delete_direct_report,
+        5: _purge_direct_reports,
+    }
+    if MISTRAL_AVAILABLE:
+        actions[4] = _generate_direct_reports_with_ai
+    
     _run_submenu(
         DIRECT_REPORTS_MENU,
-        4,
-        {
-            1: _add_direct_report,
-            2: _list_direct_reports,
-            3: _delete_direct_report,
-        },
+        6,
+        actions,
     )
     return True
 
