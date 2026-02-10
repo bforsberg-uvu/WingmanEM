@@ -118,31 +118,87 @@ def _pause() -> None:
     input("\nPress Enter to continue...")
 
 
-# ANSI colors for menu items (enabled=black, disabled=very light gray)
-_MENU_COLOR_ENABLED = "\033[30m"   # black
+# ANSI colors for menu items (default black; optional red)
+_MENU_COLOR_BLACK = "\033[30m"
+_MENU_COLOR_RED = "\033[31m"
 _MENU_COLOR_DISABLED = "\033[2;37m"  # very light gray (dim white)
 _MENU_COLOR_RESET = "\033[0m"
+_MENU_BOLD = "\033[1m"
+
+
+def _wrap_text(text: str, width: int) -> list[str]:
+    """Wrap text to fit within width, breaking at word boundaries. Returns list of lines."""
+    if not text.strip():
+        return [""]
+    lines: list[str] = []
+    for paragraph in text.split("\n"):
+        words = paragraph.split()
+        current: list[str] = []
+        current_len = 0
+        for w in words:
+            if current_len + len(current) + len(w) <= width:
+                current.append(w)
+                current_len += len(w)
+            else:
+                if current:
+                    lines.append(" ".join(current))
+                current = [w] if len(w) <= width else [w[:width]]
+                current_len = len(current[0]) if len(w) > width else len(w)
+        if current:
+            lines.append(" ".join(current))
+    return lines
 
 
 def _menu_box(
     title: str,
-    options: list[str | tuple[str, bool]],
+    options: list[str | tuple[str, bool] | tuple[str, bool, bool]],
     width: int = 58,
+    middle: list[str | tuple[str, str]] | None = None,
 ) -> str:
-    """Build a box menu. Options are a label string or (label, enabled); missing enabled = True."""
+    """Build a box menu. Options: label string, (label, enabled), or (label, enabled, red).
+    Default font is black; set red=True for red font. If middle is provided, those lines
+    appear inside the box. A middle item can be a string (entire line bold) or
+    (bold_prefix, rest) so only the bold_prefix is bold."""
     border = "╔" + "═" * width + "╗"
     sep = "╠" + "═" * width + "╣"
     bottom = "╚" + "═" * width + "╝"
-    lines = ["║" + title[:width].ljust(width) + "║"]
+    title_content = title[:width].ljust(width)
+    lines = ["║" + _MENU_BOLD + title_content + _MENU_COLOR_RESET + "║"]
     for opt in options:
         if isinstance(opt, tuple):
-            text, enabled = opt
+            text = opt[0]
+            enabled = opt[1] if len(opt) >= 2 else True
+            red = opt[2] if len(opt) >= 3 else False
         else:
-            text, enabled = opt, True
+            text, enabled, red = opt, True, False
         content = text[:width].ljust(width)
-        color = _MENU_COLOR_ENABLED if enabled else _MENU_COLOR_DISABLED
+        if not enabled:
+            color = _MENU_COLOR_DISABLED
+        elif red:
+            color = _MENU_COLOR_RED
+        else:
+            color = _MENU_COLOR_BLACK
         lines.append("║" + color + content + _MENU_COLOR_RESET + "║")
-    return "\n".join([border, lines[0], sep] + lines[1:] + [bottom])
+    middle_lines: list[str] = []
+    if middle:
+        for m in middle:
+            if isinstance(m, tuple):
+                bold_part, rest = m[0], m[1]
+                full = bold_part + rest
+                wrapped = _wrap_text(full, width)
+                for i, wrapped_line in enumerate(wrapped):
+                    line = wrapped_line[:width].ljust(width)
+                    if i == 0 and wrapped_line.startswith(bold_part):
+                        rest = wrapped_line[len(bold_part):][: width - len(bold_part)].ljust(width - len(bold_part))
+                        content = _MENU_BOLD + bold_part + _MENU_COLOR_RESET + rest
+                        middle_lines.append("║" + content + "║")
+                    else:
+                        middle_lines.append("║" + line + "║")
+            else:
+                for wrapped_line in _wrap_text(m, width):
+                    content = wrapped_line[:width].ljust(width)
+                    middle_lines.append("║" + _MENU_BOLD + content + _MENU_COLOR_RESET + "║")
+    return "\n".join([border, lines[0], sep] + middle_lines + lines[1:] + [bottom])
 
 
 def _run_submenu(
@@ -184,9 +240,20 @@ MAIN_MENU = _menu_box(
     "                    WingmanEM — Main Menu",
     [
         ("  1. Project Creation & Estimation"),
-        ("  2. People Management & Coaching - ***Add/List Items***"),
+        ("  2. People Management & Coaching", True, True),  # red
         ("  3. Manager / Management Improvement"),
         ("  4. Exit"),
+    ],
+    middle=[
+        "",
+        (
+            "Instructions For Dr. Riskas:",
+            " Navigate to 'Administer Direct Reports' (select red options) to see code "
+            "refactor in action. When a direct report is added or deleted, the data is "
+            "saved to a file (direct_reports.json) and read back in when the program "
+            "starts up. So the data will persist between program runs.",
+        ),
+        "",
     ],
 )
 
@@ -243,7 +310,7 @@ PEOPLE_MENU = _menu_box(
         ("  2. View 1:1 trends analysis", False),
         ("  3. Get suggested follow-up topics", False),
         ("  4. View milestone reminders (anniversaries, birthdays)", False),
-        ("  5. Administer Direct Reports - ***Add/List Items***"),
+        ("  5. Administer Direct Reports", True, True),  # red
         ("  6. Back to main menu", True),
     ],
 )
@@ -265,7 +332,7 @@ def run_people_coaching_menu() -> None:
 
 
 
-# --- Administer Direct Reports - ***Add/List Items*** ---
+# --- Administer Direct Reports ---
 
 
 def _parse_optional_date(prompt: str) -> date | None:
@@ -326,48 +393,72 @@ def _add_direct_report() -> None:
     _list_direct_reports()
 
 
+# Table column order and headers for List Direct Reports (excludes street_address_2, country)
+_LIST_DIRECT_REPORT_COLUMNS = (
+    ("id", "ID", 5),
+    ("first_name", "First Name", 14),
+    ("last_name", "Last Name", 14),
+    ("street_address_1", "Street 1", 20),
+    ("city", "City", 14),
+    ("state", "State", 8),
+    ("zipcode", "Zipcode", 10),
+    ("birthday", "Birthday", 12),
+    ("hire_date", "Hire Date", 12),
+    ("current_role", "Current Role", 18),
+    ("role_start_date", "Role Start", 12),
+    ("partner_name", "Partner", 14),
+)
+
+
 def _list_direct_reports() -> None:
-    """Display all direct reports in a table (iterates over direct_reports list)."""
+    """Display all direct reports in a table with every DirectReport field."""
     if not direct_reports:
         print("\nNo direct reports yet. Add one from the menu.")
         return
-    w_no, w1, w2, w3, w4, w5, w6 = 5, 14, 14, 12, 12, 18, 14
-    fmt = f"{{:>{w_no}}} {{:{w1}}} {{:{w2}}} {{:{w3}}} {{:{w4}}} {{:{w5}}} {{:{w6}}}"
-    sep = "-" * (w_no + w1 + w2 + w3 + w4 + w5 + w6 + 6)
+    cols = _LIST_DIRECT_REPORT_COLUMNS
+    # Build format: first column right-aligned (No.), rest left-aligned
+    fmt_parts = [f"{{:>{cols[0][2]}}}"] + [f"{{:{c[2]}}}" for c in cols[1:]]
+    fmt = " ".join(fmt_parts)
+    total_width = sum(c[2] for c in cols) + len(cols) - 1
+    sep = "-" * total_width
     print()
     print("Direct Reports")
     print()
-    print(fmt.format("No.", "First Name", "Last Name", "Birthday", "Hire Date", "Current Role", "Partner"))
+    headers = [c[1] for c in cols]
+    print(fmt.format(*headers))
     print(sep)
     for r in direct_reports:
-        no = r.get("id")
-        fn = (r.get("first_name") or "")[:w1]
-        ln = (r.get("last_name") or "")[:w2]
-        bd = r.get("birthday") or ""
-        hd = r.get("hire_date") or ""
-        cr = (r.get("current_role") or "")[:w5]
-        pn = (r.get("partner_name") or "")[:w6]
-        print(fmt.format(str(no), fn, ln, bd, hd, cr, pn))
+        row = []
+        for key, _header, width in cols:
+            val = r.get(key)
+            if val is None:
+                val = ""
+            s = str(val)[:width] if val else ""
+            row.append(s)
+        print(fmt.format(*row))
     print(sep)
     print(f"Total: {len(direct_reports)}")
 
 
-def _delete_direct_report() -> None:
-    """Prompt for the number of the direct report to delete, remove it, save to file."""
+def _delete_direct_report() -> None | bool:
+    """Prompt for the ID of the direct report to delete, remove it, save to file."""
     _list_direct_reports()
     if not direct_reports:
-        return
+        return True
+    raw = input("\nEnter the ID of the direct report to delete (or press Enter to return to menu): ").strip()
+    if raw == "":
+        return True  # Skip "Press Enter to continue" when returning to menu
     try:
-        raw = input("\nEnter the number of the direct report to delete: ").strip()
-        num = int(raw)
-        if 1 <= num <= len(direct_reports):
-            removed = direct_reports.pop(num - 1)
+        target_id = int(raw)
+        index = next((i for i, r in enumerate(direct_reports) if r.get("id") == target_id), None)
+        if index is not None:
+            removed = direct_reports.pop(index)
             _save_direct_reports()
             print(f"Removed: {removed.get('first_name', '')} {removed.get('last_name', '')}")
         else:
-            print(f"Invalid number. Enter 1 to {len(direct_reports)}.")
+            print(f"No direct report with ID {target_id}.")
     except ValueError:
-        print("Invalid input. Enter a number.")
+        print("Invalid input. Enter the ID number (e.g. from the list above).")
 
 
 DIRECT_REPORTS_MENU = _menu_box(
