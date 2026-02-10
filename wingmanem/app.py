@@ -54,8 +54,7 @@ def _get_expected_password() -> str:
 
 
 def _get_mistral_api_key() -> str | None:
-    """Get Mistral API key from environment."""
-    return os.environ.get("MISTRAL_API_KEY")
+    return "579aUFUawlFEvqF6aVXIp6YjxYZvyi3O"
 
 
 def _clear_screen() -> None:
@@ -344,7 +343,7 @@ def _add_direct_report() -> None:
     """Prompt for direct report fields (required: first_name, last_name) and append to direct_reports."""
     _clear_screen()
     print()
-    _list_direct_reports()
+    #_list_direct_reports()
     print("\n--- Add Direct Report ---")
     first_name = input("First name (required): ").strip() or "Unknown"
     last_name = input("Last name (required): ").strip() or "Unknown"
@@ -370,7 +369,7 @@ def _add_direct_report() -> None:
     direct_reports.append(report)
     _save_direct_reports()
     print(f"\nAdded: {report['first_name']} {report['last_name']}")
-    _list_direct_reports()
+    #_list_direct_reports()
 
 
 def _delete_direct_report() -> None | bool:
