@@ -11,19 +11,54 @@ from collections.abc import Callable
 from datetime import date, datetime
 from typing import Any
 
-# Keys for direct report dicts (mirror former dataclass fields)
-DIRECT_REPORT_KEYS = ("firstName", "lastName", "birthdate", "hireDate", "partnerName")
+# Direct_Reports table structure (project_plan.md): required id, first_name, last_name; rest optional
+DIRECT_REPORT_OPTIONAL_KEYS = (
+    "street_address_1", "street_address_2", "city", "state", "zipcode", "country",
+    "birthday", "hire_date", "current_role", "role_start_date", "partner_name",
+)
 
-# Global list of direct reports (each item is a dict with DIRECT_REPORT_KEYS)
+# Global list of direct reports (each item is a dict mirroring Table Direct_Reports)
 direct_reports: list[dict[str, Any]] = []
 
 # Persistence file (same data as direct_reports)
 DIRECT_REPORTS_FILE = "direct_reports.json"
 
 
+def _next_direct_report_id() -> int:
+    """Return the next available id for a new direct report."""
+    max_id = 0
+    for r in direct_reports:
+        try:
+            max_id = max(max_id, int(r.get("id") or 0))
+        except (TypeError, ValueError):
+            pass
+    return max_id + 1
+
+
+def _normalize_direct_report(r: dict[str, Any]) -> dict[str, Any]:
+    """Ensure dict has Direct_Reports table keys; migrate old camelCase keys."""
+    key_map = {
+        "firstName": "first_name", "lastName": "last_name",
+        "birthdate": "birthday", "hireDate": "hire_date", "partnerName": "partner_name",
+    }
+    out: dict[str, Any] = {}
+    for k, v in r.items():
+        out[key_map.get(k, k)] = v
+    # Required: id (keep if present), first_name, last_name
+    if "first_name" not in out or out["first_name"] is None:
+        out["first_name"] = ""
+    if "last_name" not in out or out["last_name"] is None:
+        out["last_name"] = ""
+    # Optional
+    for key in DIRECT_REPORT_OPTIONAL_KEYS:
+        if key not in out:
+            out[key] = None
+    return out
+
+
 # --- Persistence ---
 def _load_direct_reports() -> None:
-    """Read direct_reports from file into the global list."""
+    """Read direct_reports from file into the global list; normalize keys and assign missing ids."""
     global direct_reports
     if not os.path.isfile(DIRECT_REPORTS_FILE):
         direct_reports = []
@@ -31,7 +66,17 @@ def _load_direct_reports() -> None:
     try:
         with open(DIRECT_REPORTS_FILE, encoding="utf-8") as f:
             data = json.load(f)
-        direct_reports = data if isinstance(data, list) else []
+        raw = data if isinstance(data, list) else []
+        direct_reports = [_normalize_direct_report(r) for r in raw if isinstance(r, dict)]
+        next_id = _next_direct_report_id()
+        for r in direct_reports:
+            try:
+                if int(r.get("id") or 0) <= 0:
+                    r["id"] = next_id
+                    next_id += 1
+            except (TypeError, ValueError):
+                r["id"] = next_id
+                next_id += 1
     except (json.JSONDecodeError, OSError):
         direct_reports = []
 
@@ -249,26 +294,35 @@ def _parse_optional_date(prompt: str) -> date | None:
 
 
 def _add_direct_report() -> None:
-    """Prompt for direct report fields and append to direct_reports."""
+    """Prompt for direct report fields (required: first_name, last_name) and append to direct_reports."""
     _clear_screen()
     print()
     _list_direct_reports()
     print("\n--- Add Direct Report ---")
-    firstName = input("First name: ").strip() or "Unknown"
-    lastName = input("Last name: ").strip() or "Unknown"
-    birthdate = _parse_optional_date("Birthdate (YYYYMMDD or YYYY-MM-DD, or Enter to skip): ")
-    hireDate = _parse_optional_date("Hire date (YYYYMMDD or YYYY-MM-DD, or Enter to skip): ")
-    partnerName = input("Partner name (or Enter to skip): ").strip() or None
-    report: dict[str, Any] = {
-        "firstName": firstName,
-        "lastName": lastName,
-        "birthdate": birthdate.isoformat() if birthdate else None,
-        "hireDate": hireDate.isoformat() if hireDate else None,
-        "partnerName": partnerName,
-    }
+    first_name = input("First name (required): ").strip() or "Unknown"
+    last_name = input("Last name (required): ").strip() or "Unknown"
+    report = _normalize_direct_report({
+        "id": _next_direct_report_id(),
+        "first_name": first_name,
+        "last_name": last_name,
+    })
+    report["street_address_1"] = input("Street address 1 (or Enter to skip): ").strip() or None
+    report["street_address_2"] = input("Street address 2 (or Enter to skip): ").strip() or None
+    report["city"] = input("City (or Enter to skip): ").strip() or None
+    report["state"] = input("State (or Enter to skip): ").strip() or None
+    report["zipcode"] = input("Zipcode (or Enter to skip): ").strip() or None
+    report["country"] = input("Country (or Enter to skip): ").strip() or None
+    bd = _parse_optional_date("Birthday (YYYYMMDD or YYYY-MM-DD, or Enter to skip): ")
+    report["birthday"] = bd.isoformat() if bd else None
+    hd = _parse_optional_date("Hire date (YYYYMMDD or YYYY-MM-DD, or Enter to skip): ")
+    report["hire_date"] = hd.isoformat() if hd else None
+    report["current_role"] = input("Current role (or Enter to skip): ").strip() or None
+    rsd = _parse_optional_date("Role start date (YYYYMMDD or YYYY-MM-DD, or Enter to skip): ")
+    report["role_start_date"] = rsd.isoformat() if rsd else None
+    report["partner_name"] = input("Partner name (or Enter to skip): ").strip() or None
     direct_reports.append(report)
     _save_direct_reports()
-    print(f"\nAdded: {report['firstName']} {report['lastName']}")
+    print(f"\nAdded: {report['first_name']} {report['last_name']}")
     _list_direct_reports()
 
 
@@ -277,21 +331,23 @@ def _list_direct_reports() -> None:
     if not direct_reports:
         print("\nNo direct reports yet. Add one from the menu.")
         return
-    w_no, w1, w2, w3, w4, w5 = 4, 18, 18, 12, 12, 32
-    fmt = f"{{:>{w_no}}} {{:{w1}}} {{:{w2}}} {{:{w3}}} {{:{w4}}} {{:{w5}}}"
-    sep = "-" * (w_no + w1 + w2 + w3 + w4 + w5 + 5)
+    w_no, w1, w2, w3, w4, w5, w6 = 5, 14, 14, 12, 12, 18, 14
+    fmt = f"{{:>{w_no}}} {{:{w1}}} {{:{w2}}} {{:{w3}}} {{:{w4}}} {{:{w5}}} {{:{w6}}}"
+    sep = "-" * (w_no + w1 + w2 + w3 + w4 + w5 + w6 + 6)
     print()
     print("Direct Reports")
     print()
-    print(fmt.format("No.", "First Name", "Last Name", "Birthdate", "Hire Date", "Partner"))
+    print(fmt.format("No.", "First Name", "Last Name", "Birthday", "Hire Date", "Current Role", "Partner"))
     print(sep)
-    for i, r in enumerate(direct_reports, start=1):
-        bd = r.get("birthdate") or ""
-        hd = r.get("hireDate") or ""
-        pn = (r.get("partnerName") or "")[:w5]
-        fn = (r.get("firstName") or "")[:w1]
-        ln = (r.get("lastName") or "")[:w2]
-        print(fmt.format(str(i), fn, ln, bd, hd, pn))
+    for r in direct_reports:
+        no = r.get("id")
+        fn = (r.get("first_name") or "")[:w1]
+        ln = (r.get("last_name") or "")[:w2]
+        bd = r.get("birthday") or ""
+        hd = r.get("hire_date") or ""
+        cr = (r.get("current_role") or "")[:w5]
+        pn = (r.get("partner_name") or "")[:w6]
+        print(fmt.format(str(no), fn, ln, bd, hd, cr, pn))
     print(sep)
     print(f"Total: {len(direct_reports)}")
 
@@ -307,7 +363,7 @@ def _delete_direct_report() -> None:
         if 1 <= num <= len(direct_reports):
             removed = direct_reports.pop(num - 1)
             _save_direct_reports()
-            print(f"Removed: {removed.get('firstName', '')} {removed.get('lastName', '')}")
+            print(f"Removed: {removed.get('first_name', '')} {removed.get('last_name', '')}")
         else:
             print(f"Invalid number. Enter 1 to {len(direct_reports)}.")
     except ValueError:
