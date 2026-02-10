@@ -26,6 +26,9 @@ build/
 .env
 .env.local
 
+# App data
+direct_reports.json
+
 # OS
 .DS_Store
 Thumbs.db

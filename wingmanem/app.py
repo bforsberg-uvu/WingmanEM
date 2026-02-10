@@ -3,31 +3,46 @@ WingmanEM CLI prototype Chunk #2
 Main application logic: menu-driven navigation and password protection.
 """
 
-from copyreg import clear_extension_cache
 import getpass
-from inspect import cleandoc
+import json
 import os
-from pdb import run
 import sys
 from collections.abc import Callable
-from dataclasses import dataclass
 from datetime import date, datetime
-from typing import Optional
+from typing import Any
+
+# Keys for direct report dicts (mirror former dataclass fields)
+DIRECT_REPORT_KEYS = ("firstName", "lastName", "birthdate", "hireDate", "partnerName")
+
+# Global list of direct reports (each item is a dict with DIRECT_REPORT_KEYS)
+direct_reports: list[dict[str, Any]] = []
+
+# Persistence file (same data as direct_reports)
+DIRECT_REPORTS_FILE = "direct_reports.json"
 
 
-@dataclass
-class DirectReport:
-    """A direct report (person) with key details for 1:1s and milestones."""
+# --- Persistence ---
+def _load_direct_reports() -> None:
+    """Read direct_reports from file into the global list."""
+    global direct_reports
+    if not os.path.isfile(DIRECT_REPORTS_FILE):
+        direct_reports = []
+        return
+    try:
+        with open(DIRECT_REPORTS_FILE, encoding="utf-8") as f:
+            data = json.load(f)
+        direct_reports = data if isinstance(data, list) else []
+    except (json.JSONDecodeError, OSError):
+        direct_reports = []
 
-    firstName: str
-    lastName: str
-    birthdate: Optional[date] = None
-    hireDate: Optional[date] = None
-    partnerName: Optional[str] = None
 
-
-# Global list of direct reports
-direct_reports: list[DirectReport] = []
+def _save_direct_reports() -> None:
+    """Write the global direct_reports list to file."""
+    try:
+        with open(DIRECT_REPORTS_FILE, "w", encoding="utf-8") as f:
+            json.dump(direct_reports, f, indent=2)
+    except OSError as e:
+        print(f"Could not save direct reports: {e}", file=sys.stderr)
 
 
 # --- Configuration ---
@@ -237,54 +252,66 @@ def _add_direct_report() -> None:
     """Prompt for direct report fields and append to direct_reports."""
     _clear_screen()
     print()
-    _content_of_direct_reports()
+    _list_direct_reports()
     print("\n--- Add Direct Report ---")
     firstName = input("First name: ").strip() or "Unknown"
     lastName = input("Last name: ").strip() or "Unknown"
     birthdate = _parse_optional_date("Birthdate (YYYYMMDD or YYYY-MM-DD, or Enter to skip): ")
     hireDate = _parse_optional_date("Hire date (YYYYMMDD or YYYY-MM-DD, or Enter to skip): ")
     partnerName = input("Partner name (or Enter to skip): ").strip() or None
-    report = DirectReport(
-        firstName=firstName,
-        lastName=lastName,
-        birthdate=birthdate,
-        hireDate=hireDate,
-        partnerName=partnerName,
-    )
+    report: dict[str, Any] = {
+        "firstName": firstName,
+        "lastName": lastName,
+        "birthdate": birthdate.isoformat() if birthdate else None,
+        "hireDate": hireDate.isoformat() if hireDate else None,
+        "partnerName": partnerName,
+    }
     direct_reports.append(report)
-    print(f"\nAdded: {report.firstName} {report.lastName}")
-    _content_of_direct_reports()
-
-
-def _content_of_direct_reports() -> None:
-    """Display the direct_reports list (table or empty message)."""
-    print("Content of direct_reports:") 
-    print(direct_reports)
+    _save_direct_reports()
+    print(f"\nAdded: {report['firstName']} {report['lastName']}")
+    _list_direct_reports()
 
 
 def _list_direct_reports() -> None:
-    """Display all direct reports in a table."""
-    _clear_screen() 
+    """Display all direct reports in a table (iterates over direct_reports list)."""
     if not direct_reports:
         print("\nNo direct reports yet. Add one from the menu.")
         return
-    # Column widths
-    w1, w2, w3, w4, w5 = 20, 20, 12, 12, 35
-    fmt = f"{{:{w1}}} {{:{w2}}} {{:{w3}}} {{:{w4}}} {{:{w5}}}"
-    sep = "-" * (w1 + w2 + w3 + w4 + w5 + 4)
-    _clear_screen()  
+    w_no, w1, w2, w3, w4, w5 = 4, 18, 18, 12, 12, 32
+    fmt = f"{{:>{w_no}}} {{:{w1}}} {{:{w2}}} {{:{w3}}} {{:{w4}}} {{:{w5}}}"
+    sep = "-" * (w_no + w1 + w2 + w3 + w4 + w5 + 5)
     print()
-    print("Direct Reports:")
+    print("Direct Reports")
     print()
-    print(fmt.format("First Name", "Last Name", "Birthdate", "Hire Date", "Partner"))
+    print(fmt.format("No.", "First Name", "Last Name", "Birthdate", "Hire Date", "Partner"))
     print(sep)
-    for r in direct_reports:
-        bd = r.birthdate.isoformat() if r.birthdate else ""
-        hd = r.hireDate.isoformat() if r.hireDate else ""
-        pn = r.partnerName or ""
-        print(fmt.format(r.firstName[:w1], r.lastName[:w2], bd, hd, pn[:w5]))
+    for i, r in enumerate(direct_reports, start=1):
+        bd = r.get("birthdate") or ""
+        hd = r.get("hireDate") or ""
+        pn = (r.get("partnerName") or "")[:w5]
+        fn = (r.get("firstName") or "")[:w1]
+        ln = (r.get("lastName") or "")[:w2]
+        print(fmt.format(str(i), fn, ln, bd, hd, pn))
     print(sep)
     print(f"Total: {len(direct_reports)}")
+
+
+def _delete_direct_report() -> None:
+    """Prompt for the number of the direct report to delete, remove it, save to file."""
+    _list_direct_reports()
+    if not direct_reports:
+        return
+    try:
+        raw = input("\nEnter the number of the direct report to delete: ").strip()
+        num = int(raw)
+        if 1 <= num <= len(direct_reports):
+            removed = direct_reports.pop(num - 1)
+            _save_direct_reports()
+            print(f"Removed: {removed.get('firstName', '')} {removed.get('lastName', '')}")
+        else:
+            print(f"Invalid number. Enter 1 to {len(direct_reports)}.")
+    except ValueError:
+        print("Invalid input. Enter a number.")
 
 
 DIRECT_REPORTS_MENU = _menu_box(
@@ -292,19 +319,21 @@ DIRECT_REPORTS_MENU = _menu_box(
     [
         ("  1. Add direct report", True),
         ("  2. List direct reports", True),
-        ("  3. Back to previous menu", True),
+        ("  3. Delete a direct report", True),
+        ("  4. Back to previous menu", True),
     ],
 )
 
 
 def run_direct_reports_menu() -> bool:
-    """Sub-menu for administering direct reports (add/list). Returns True so caller skips pause."""
+    """Sub-menu for administering direct reports (add/list/delete). Returns True so caller skips pause."""
     _run_submenu(
         DIRECT_REPORTS_MENU,
-        3,
+        4,
         {
             1: _add_direct_report,
             2: _list_direct_reports,
+            3: _delete_direct_report,
         },
     )
     return True
@@ -335,8 +364,9 @@ def run_management_improvement_menu() -> None:
 
 # --- Entry point ---
 def main() -> None:
-    """Run the CLI: authenticate, then main menu loop."""
+    """Run the CLI: load data, then main menu loop."""
     print("Welcome to WingmanEM.\n")
+    _load_direct_reports()
 # Will be used later:
 #    if not authenticate():
 #        print("Authentication failed. Exiting.", file=sys.stderr)
