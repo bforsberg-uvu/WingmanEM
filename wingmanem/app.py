@@ -196,11 +196,13 @@ def _menu_box(
     options: list[str | tuple[str, bool] | tuple[str, bool, bool]],
     width: int = 58,
     middle: list[str | tuple[str, str]] | None = None,
+    middle_position: str = "top",
 ) -> str:
     """Build a box menu. Options: label string, (label, enabled), or (label, enabled, red).
     Default font is black; set red=True for red font. If middle is provided, those lines
     appear inside the box. A middle item can be a string (entire line bold) or
-    (bold_prefix, rest) so only the bold_prefix is bold."""
+    (bold_prefix, rest) so only the bold_prefix is bold.
+    middle_position can be 'top' (default) or 'bottom'."""
     border = "╔" + "═" * width + "╗"
     sep = "╠" + "═" * width + "╣"
     bottom = "╚" + "═" * width + "╝"
@@ -227,19 +229,30 @@ def _menu_box(
             if isinstance(m, tuple):
                 bold_part, rest = m[0], m[1]
                 full = bold_part + rest
-                wrapped = _wrap_text(full, width)
+                wrapped = _wrap_text(full, width - 4)  # Leave room for padding
                 for i, wrapped_line in enumerate(wrapped):
-                    line = wrapped_line[:width].ljust(width)
-                    if i == 0 and wrapped_line.startswith(bold_part):
-                        rest = wrapped_line[len(bold_part):][: width - len(bold_part)].ljust(width - len(bold_part))
-                        content = _MENU_BOLD + bold_part + _MENU_COLOR_RESET + rest
+                    if i == 0:
+                        # First line: make only bold_part bold
+                        bold_len = len(bold_part)
+                        bold_text = wrapped_line[:bold_len]
+                        rest_text = wrapped_line[bold_len:width - 4]
+                        # Build content: padding + bold + text + reset + rest + padding
+                        content = "  " + _MENU_BOLD + bold_text + _MENU_COLOR_RESET + rest_text
+                        # Pad to width, accounting for invisible ANSI codes
+                        visible_len = len("  ") + len(bold_text) + len(rest_text)
+                        padding_needed = width - 2 - visible_len
+                        content = content + (" " * padding_needed) + "  "
                         middle_lines.append("║" + content + "║")
                     else:
-                        middle_lines.append("║" + line + "║")
+                        # Subsequent lines have no bold
+                        padded_line = "  " + wrapped_line[:width - 4].ljust(width - 4) + "  "
+                        middle_lines.append("║" + padded_line + "║")
             else:
                 for wrapped_line in _wrap_text(m, width):
                     content = wrapped_line[:width].ljust(width)
                     middle_lines.append("║" + _MENU_BOLD + content + _MENU_COLOR_RESET + "║")
+    if middle_lines and middle_position == "bottom":
+        return "\n".join([border, lines[0], sep] + lines[1:] + [sep] + middle_lines + [bottom])
     return "\n".join([border, lines[0], sep] + middle_lines + lines[1:] + [bottom])
 
 
@@ -278,54 +291,64 @@ def authenticate() -> bool:
 
 
 # --- Main menu ---
-MAIN_MENU = _menu_box(
-    "                    WingmanEM — Main Menu",
-    [
-        ("  1. Project Creation & Estimation"),
-        ("  2. People Management & Coaching", True, True),  # red
-        ("  3. Manager / Management Improvement"),
-        ("  4. Exit"),
-    ],
-    middle=[
-        "",
-        (
-            "Instructions For Dr. Riskas:",
-            " Navigate to 'Administer Direct Reports' (select red options) to see code "
-            "refactor in action.  There is an option to create direct reports from Mistral AI "
-            "so you don't have to manually enter them. "
-            "When a direct report is added or deleted, the data is "
-            "saved to a file (direct_reports.json) and read back in when the program "
-            "starts up. So the data will persist between program runs.",
-        ),
-        "",
-    ],
-)
+def _get_latest_management_tip() -> str:
+    """Return the most recent management tip, or a placeholder if none."""
+    if management_tips:
+        return management_tips[-1]
+    return "No tip yet. Generate one from Mistral AI."
+
+
+def _build_main_menu() -> str:
+    """Build the main menu with the latest management tip."""
+    tip = _get_latest_management_tip()
+    return _menu_box(
+        "                    WingmanEM — Main Menu",
+        [
+            ("  1. Project Creation & Estimation"),
+            ("  2. People Management & Coaching", True, True),  # red
+            ("  3. Exit"),
+        ],
+        middle=[
+            ("DAILY MANAGEMENT TIP:", f" {tip}  "),
+            "",
+            "",
+            (
+                "Instructions For Dr. Riskas:",
+                " Navigate to 'Administer Direct Reports' (select red options) to see code "
+                "refactor in action.  There is an option to create direct reports from Mistral AI "
+                "so you don't have to manually enter them. "
+                "When a direct report is added or deleted, the data is "
+                "saved to a file (direct_reports.json) and read back in when the program "
+                "starts up. So the data will persist between program runs.  ",
+            ),
+            "",
+        ],
+        middle_position="bottom",
+    )
 
 
 def run_main_menu() -> bool:
     """Show main menu and return chosen option (1–4, or 9 for hidden developer menu). Returns False to exit."""
     _clear_screen()
-    print(MAIN_MENU)
-    choice = _prompt_choice("Select an option (1–4): ", 9)
+    print(_build_main_menu())
+    choice = _prompt_choice("Select an option (1–3): ", 9)
     if choice == 0:
-        print("Invalid option. Please enter 1, 2, 3, or 4.")
+        print("Invalid option. Please enter 1, 2, or 3.")
         _pause()
         return True
     if choice == 9:
         run_developer_menu()
         return True
-    if choice in (5, 6, 7, 8):
-        print("Invalid option. Please enter 1, 2, 3, or 4.")
+    if choice in (4, 5, 6, 7, 8):
+        print("Invalid option. Please enter 1, 2, or 3.")
         _pause()
         return True
-    if choice == 4:
+    if choice == 3:
         return False
     if choice == 1:
         run_project_estimation_menu()
     elif choice == 2:
         run_people_coaching_menu()
-    elif choice == 3:
-        run_management_improvement_menu()
     return True
 
 
@@ -725,84 +748,6 @@ def run_direct_reports_menu() -> bool:
     return True
 
 
-
-
-# --- Manager / Management Improvement ---
-def _get_management_tip_from_ai() -> None | bool:
-    """Get a management tip from Mistral AI and persist it to avoid repeats."""
-    if not MISTRAL_AVAILABLE:
-        print("\nMistral AI is not installed. Install it with: pip install mistralai")
-        return
-    api_key = _get_mistral_api_key()
-    if not api_key:
-        print("\nMistral API key not found. Set MISTRAL_API_KEY environment variable.")
-        return
-
-    def _print_tip_box(tip_text: str) -> None:
-        width = 58
-        border = "╔" + "═" * width + "╗"
-        bottom = "╚" + "═" * width + "╝"
-        title = "Daily Management Tip"
-        title_line = "║" + _MENU_BOLD + title.center(width) + _MENU_COLOR_RESET + "║"
-        print("\n" + border)
-        print(title_line)
-        print("╠" + "═" * width + "╣")
-        for line in _wrap_text(tip_text, width):
-            print("║" + line[:width].ljust(width) + "║")
-        print(bottom + "\n")
-
-    _clear_screen()
-
-    previous_tips = set(t.strip() for t in management_tips if t.strip())
-    tips_sample = "\n".join(f"- {t}" for t in list(previous_tips)[-20:])
-    prompt = (
-        "Provide one concise, actionable daily management tip (1-2 sentences). "
-        "Avoid repeating any of the tips below. Do not use quotes, bullets, or numbering.\n\n"
-        f"Previously used tips:\n{tips_sample if tips_sample else 'None'}"
-    )
-
-    try:
-        client = Mistral(api_key=api_key)
-        message = client.chat.complete(
-            model="mistral-large-latest",
-            messages=[{"role": "user", "content": prompt}],
-        )
-        tip = message.choices[0].message.content.strip()
-        if not tip:
-            print("No tip returned. Try again.")
-            return True
-        if tip in previous_tips:
-            print("That tip was already used. Try again.")
-            return True
-        management_tips.append(tip)
-        _save_management_tips()
-        _print_tip_box(tip)
-        _pause()
-        return True
-    except Exception as e:
-        print(f"Error calling Mistral AI: {e}")
-        print("\nMake sure your MISTRAL_API_KEY is valid.")
-        return True
-
-
-IMPROVEMENT_MENU = _menu_box(
-    "           Manager / Management Improvement",
-    [
-        ("  1. Get daily management tip", MISTRAL_AVAILABLE),
-        ("  2. Back to main menu", True),
-    ],
-)
-
-
-def run_management_improvement_menu() -> None:
-    """Sub-menu for management improvement."""
-    _run_submenu(
-        IMPROVEMENT_MENU,
-        2,
-        {
-            1: _get_management_tip_from_ai,
-        },
-    )
 
 
 # --- Entry point ---
