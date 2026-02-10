@@ -29,6 +29,12 @@ direct_reports: list[dict[str, Any]] = []
 # Persistence file (same data as direct_reports)
 DIRECT_REPORTS_FILE = "direct_reports.json"
 
+# Persistence file for management tips
+MANAGEMENT_TIPS_FILE = "management_tips.json"
+
+# Global list of management tips
+management_tips: list[str] = []
+
 
 def _next_direct_report_id() -> int:
     """Return the next available id for a new direct report."""
@@ -94,6 +100,32 @@ def _save_direct_reports() -> None:
             json.dump(direct_reports, f, indent=2)
     except OSError as e:
         print(f"Could not save direct reports: {e}", file=sys.stderr)
+
+
+def _load_management_tips() -> None:
+    """Read management tips from file into the global list."""
+    global management_tips
+    if not os.path.isfile(MANAGEMENT_TIPS_FILE):
+        management_tips = []
+        return
+    try:
+        with open(MANAGEMENT_TIPS_FILE, encoding="utf-8") as f:
+            data = json.load(f)
+        if isinstance(data, list):
+            management_tips = [str(t).strip() for t in data if str(t).strip()]
+        else:
+            management_tips = []
+    except (json.JSONDecodeError, OSError):
+        management_tips = []
+
+
+def _save_management_tips() -> None:
+    """Write the global management_tips list to file."""
+    try:
+        with open(MANAGEMENT_TIPS_FILE, "w", encoding="utf-8") as f:
+            json.dump(management_tips, f, indent=2)
+    except OSError as e:
+        print(f"Could not save management tips: {e}", file=sys.stderr)
 
 
 # --- Configuration ---
@@ -348,12 +380,72 @@ PEOPLE_MENU = _menu_box(
         ("  1. Upload 1:1 recording (summarize & action items)", False),
         ("  2. View 1:1 trends analysis", False),
         ("  3. Get suggested follow-up topics", False),
-        ("  4. View milestone reminders (anniversaries, birthdays)", False),
+            ("  4. View milestone reminders (anniversaries, birthdays)", True),
         ("  5. Administer Direct Reports", True, True),  # red
         ("  6. Back to main menu", True),
     ],
 )
 
+
+def _view_milestone_reminders() -> None | bool:
+    """Show upcoming birthdays and anniversaries for direct reports."""
+    today = date.today()
+
+    def _print_upcoming(range_days: int) -> None:
+        _clear_screen()
+        print("\n--- Milestone Reminders ---\n")
+        print(f"Showing the next {range_days} days.\n")
+        upcoming = []
+        for r in direct_reports:
+            # Birthday
+            bd = r.get("birthday")
+            if bd:
+                try:
+                    bd_date = datetime.strptime(bd, "%Y-%m-%d").date()
+                    next_bd = bd_date.replace(year=today.year)
+                    days_until = (next_bd - today).days
+                    if days_until < 0:
+                        next_bd = bd_date.replace(year=today.year + 1)
+                        days_until = (next_bd - today).days
+                    if 0 <= days_until <= range_days:
+                        upcoming.append((days_until, f"Birthday: {r['first_name']} {r['last_name']} on {next_bd.strftime('%Y-%m-%d')} ({days_until} days)", bd_date))
+                except Exception:
+                    pass
+            # Work anniversary
+            hd = r.get("hire_date")
+            if hd:
+                try:
+                    hd_date = datetime.strptime(hd, "%Y-%m-%d").date()
+                    anniv = hd_date.replace(year=today.year)
+                    days_until = (anniv - today).days
+                    if days_until < 0:
+                        anniv = hd_date.replace(year=today.year + 1)
+                        days_until = (anniv - today).days
+                    if 0 <= days_until <= range_days:
+                        years = (anniv.year - hd_date.year)
+                        upcoming.append((days_until, f"Anniversary: {r['first_name']} {r['last_name']} ({years} years) on {anniv.strftime('%Y-%m-%d')} ({days_until} days)", hd_date))
+                except Exception:
+                    pass
+        if not upcoming:
+            print(f"No upcoming birthdays or anniversaries in the next {range_days} days.")
+        else:
+            upcoming.sort()
+            for _, msg, _ in upcoming:
+                print(msg)
+
+    _print_upcoming(30)
+    while True:
+        raw = input("\nView further out? Enter days (e.g. 60, 90, 180) or press Enter to return: ").strip()
+        if raw == "":
+            return True
+        try:
+            range_days = int(raw)
+            if range_days <= 30:
+                print("Please enter a number greater than 30.")
+                continue
+            _print_upcoming(range_days)
+        except ValueError:
+            print("Invalid input. Enter a number of days or press Enter to return.")
 
 def run_people_coaching_menu() -> None:
     """Sub-menu for people management and coaching."""
@@ -364,7 +456,7 @@ def run_people_coaching_menu() -> None:
             1: lambda: print("\n[Placeholder] Upload 1:1 recording — not yet implemented."),
             2: lambda: print("\n[Placeholder] View 1:1 trends — not yet implemented."),
             3: lambda: print("\n[Placeholder] Suggested follow-up topics — not yet implemented."),
-            4: lambda: print("\n[Placeholder] Milestone reminders — not yet implemented."),
+            4: _view_milestone_reminders,
             5: run_direct_reports_menu,
         },
     )
@@ -636,10 +728,67 @@ def run_direct_reports_menu() -> bool:
 
 
 # --- Manager / Management Improvement ---
+def _get_management_tip_from_ai() -> None | bool:
+    """Get a management tip from Mistral AI and persist it to avoid repeats."""
+    if not MISTRAL_AVAILABLE:
+        print("\nMistral AI is not installed. Install it with: pip install mistralai")
+        return
+    api_key = _get_mistral_api_key()
+    if not api_key:
+        print("\nMistral API key not found. Set MISTRAL_API_KEY environment variable.")
+        return
+
+    def _print_tip_box(tip_text: str) -> None:
+        width = 58
+        border = "╔" + "═" * width + "╗"
+        bottom = "╚" + "═" * width + "╝"
+        title = "Daily Management Tip"
+        title_line = "║" + _MENU_BOLD + title.center(width) + _MENU_COLOR_RESET + "║"
+        print("\n" + border)
+        print(title_line)
+        print("╠" + "═" * width + "╣")
+        for line in _wrap_text(tip_text, width):
+            print("║" + line[:width].ljust(width) + "║")
+        print(bottom + "\n")
+
+    _clear_screen()
+
+    previous_tips = set(t.strip() for t in management_tips if t.strip())
+    tips_sample = "\n".join(f"- {t}" for t in list(previous_tips)[-20:])
+    prompt = (
+        "Provide one concise, actionable daily management tip (1-2 sentences). "
+        "Avoid repeating any of the tips below. Do not use quotes, bullets, or numbering.\n\n"
+        f"Previously used tips:\n{tips_sample if tips_sample else 'None'}"
+    )
+
+    try:
+        client = Mistral(api_key=api_key)
+        message = client.chat.complete(
+            model="mistral-large-latest",
+            messages=[{"role": "user", "content": prompt}],
+        )
+        tip = message.choices[0].message.content.strip()
+        if not tip:
+            print("No tip returned. Try again.")
+            return True
+        if tip in previous_tips:
+            print("That tip was already used. Try again.")
+            return True
+        management_tips.append(tip)
+        _save_management_tips()
+        _print_tip_box(tip)
+        _pause()
+        return True
+    except Exception as e:
+        print(f"Error calling Mistral AI: {e}")
+        print("\nMake sure your MISTRAL_API_KEY is valid.")
+        return True
+
+
 IMPROVEMENT_MENU = _menu_box(
     "           Manager / Management Improvement",
     [
-        ("  1. Get daily management tip", False),
+        ("  1. Get daily management tip", MISTRAL_AVAILABLE),
         ("  2. Back to main menu", True),
     ],
 )
@@ -651,7 +800,7 @@ def run_management_improvement_menu() -> None:
         IMPROVEMENT_MENU,
         2,
         {
-            1: lambda: print("\n[Placeholder] Daily management tip — not yet implemented."),
+            1: _get_management_tip_from_ai,
         },
     )
 
@@ -661,6 +810,7 @@ def main() -> None:
     """Run the CLI: load data, then main menu loop."""
     print("Welcome to WingmanEM.\n")
     _load_direct_reports()
+    _load_management_tips()
 # Will be used later:
 #    if not authenticate():
 #        print("Authentication failed. Exiting.", file=sys.stderr)
