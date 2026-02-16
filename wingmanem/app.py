@@ -7,6 +7,7 @@ import getpass
 import json
 import os
 import random
+import sqlite3
 import sys
 from collections.abc import Callable
 from datetime import date, datetime
@@ -37,6 +38,7 @@ management_tips: list[dict[str, str]] = []
 # Persistence files
 DIRECT_REPORTS_FILE = "direct_reports.json"
 MANAGEMENT_TIPS_FILE = "management_tips.json"
+DATABASE_PATH = "wingmanem.db"
 
 # ANSI colors for menu items
 _MENU_COLOR_BLACK = "\033[30m"
@@ -44,6 +46,155 @@ _MENU_COLOR_RED = "\033[31m"
 _MENU_COLOR_DISABLED = "\033[2;37m"  # very light gray (dim white)
 _MENU_COLOR_RESET = "\033[0m"
 _MENU_BOLD = "\033[1m"
+
+
+# ============================================================================
+# SQLite DATABASE (Chunk #3)
+# ============================================================================
+
+def _db_connection() -> sqlite3.Connection:
+    """Return a connection to the SQLite database."""
+    return sqlite3.connect(DATABASE_PATH)
+
+
+def _db_init() -> None:
+    """Create database and tables if they do not exist. Modeled after JSON file structures."""
+    conn = _db_connection()
+    try:
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS direct_reports (
+                id INTEGER PRIMARY KEY,
+                first_name TEXT,
+                last_name TEXT,
+                street_address_1 TEXT,
+                street_address_2 TEXT,
+                city TEXT,
+                state TEXT,
+                zipcode TEXT,
+                country TEXT,
+                birthday TEXT,
+                hire_date TEXT,
+                current_role TEXT,
+                role_start_date TEXT,
+                partner_name TEXT
+            )
+        """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS management_tips (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                date TEXT NOT NULL,
+                text TEXT NOT NULL
+            )
+        """)
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def _db_sync_direct_reports_from_list(reports: list[dict[str, Any]]) -> None:
+    """Replace direct_reports table content with the given list (keeps file and DB in sync)."""
+    conn = _db_connection()
+    try:
+        conn.execute("DELETE FROM direct_reports")
+        for r in reports:
+            conn.execute(
+                """INSERT INTO direct_reports (
+                    id, first_name, last_name, street_address_1, street_address_2,
+                    city, state, zipcode, country, birthday, hire_date, current_role,
+                    role_start_date, partner_name
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    r.get("id"),
+                    r.get("first_name") or "",
+                    r.get("last_name") or "",
+                    r.get("street_address_1"),
+                    r.get("street_address_2"),
+                    r.get("city"),
+                    r.get("state"),
+                    r.get("zipcode"),
+                    r.get("country"),
+                    r.get("birthday"),
+                    r.get("hire_date"),
+                    r.get("current_role"),
+                    r.get("role_start_date"),
+                    r.get("partner_name"),
+                ),
+            )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def _db_sync_management_tips_from_list(tips: list[dict[str, str]]) -> None:
+    """Replace management_tips table content with the given list (keeps file and DB in sync)."""
+    conn = _db_connection()
+    try:
+        conn.execute("DELETE FROM management_tips")
+        for t in tips:
+            conn.execute(
+                "INSERT INTO management_tips (date, text) VALUES (?, ?)",
+                (t.get("date") or "", t.get("text") or ""),
+            )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def _db_load_direct_reports() -> list[dict[str, Any]]:
+    """Load all direct reports from the database as list of dicts (same keys as JSON)."""
+    conn = _db_connection()
+    try:
+        conn.row_factory = sqlite3.Row
+        cur = conn.execute(
+            """SELECT id, first_name, last_name, street_address_1, street_address_2,
+               city, state, zipcode, country, birthday, hire_date, current_role,
+               role_start_date, partner_name FROM direct_reports ORDER BY id"""
+        )
+        rows = cur.fetchall()
+        return [_normalize_direct_report(dict(row)) for row in rows]
+    finally:
+        conn.close()
+
+
+def _db_load_management_tips() -> list[dict[str, str]]:
+    """Load all management tips from the database as list of dicts with date and text."""
+    conn = _db_connection()
+    try:
+        conn.row_factory = sqlite3.Row
+        cur = conn.execute("SELECT date, text FROM management_tips ORDER BY id")
+        rows = cur.fetchall()
+        return [{"date": row[0], "text": row[1]} for row in rows]
+    finally:
+        conn.close()
+
+
+def _db_populate_from_json_files() -> None:
+    """Populate database tables from JSON files if the files exist. Called at startup."""
+    if os.path.isfile(DIRECT_REPORTS_FILE):
+        try:
+            with open(DIRECT_REPORTS_FILE, encoding="utf-8") as f:
+                data = json.load(f)
+            raw = data if isinstance(data, list) else []
+            reports = [_normalize_direct_report(r) for r in raw if isinstance(r, dict)]
+            if reports:
+                _db_sync_direct_reports_from_list(reports)
+        except (json.JSONDecodeError, OSError):
+            pass
+    if os.path.isfile(MANAGEMENT_TIPS_FILE):
+        try:
+            with open(MANAGEMENT_TIPS_FILE, encoding="utf-8") as f:
+                data = json.load(f)
+            tips: list[dict[str, str]] = []
+            if isinstance(data, list):
+                for item in data:
+                    if isinstance(item, dict) and item.get("date") and item.get("text"):
+                        tips.append({"date": str(item["date"])[:10], "text": str(item["text"]).strip()})
+                    elif isinstance(item, str) and item.strip():
+                        tips.append({"date": date.today().isoformat(), "text": item.strip()})
+            if tips:
+                _db_sync_management_tips_from_list(tips)
+        except (json.JSONDecodeError, OSError):
+            pass
 
 
 # ============================================================================
@@ -270,13 +421,15 @@ def _load_direct_reports() -> None:
                 next_id += 1
     except (json.JSONDecodeError, OSError):
         direct_reports = []
+    _db_sync_direct_reports_from_list(direct_reports)
 
 
 def _save_direct_reports() -> None:
-    """Write the global direct_reports list to file."""
+    """Write the global direct_reports list to file and sync to database."""
     try:
         with open(DIRECT_REPORTS_FILE, "w", encoding="utf-8") as f:
             json.dump(direct_reports, f, indent=2)
+        _db_sync_direct_reports_from_list(direct_reports)
     except OSError as e:
         print(f"Could not save direct reports: {e}", file=sys.stderr)
 
@@ -301,24 +454,17 @@ _LIST_DIRECT_REPORT_COLUMNS = (
 )
 
 
-def _list_direct_reports() -> None:
-    """Display all direct reports in a table with every DirectReport field."""
-    if not direct_reports:
-        print("\nNo direct reports yet. Add one from the menu.")
-        return
+def _print_direct_reports_table(reports: list[dict[str, Any]], title: str) -> None:
+    """Print a table of direct reports (used for file and database listings)."""
     cols = _LIST_DIRECT_REPORT_COLUMNS
-    # Build format: first column right-aligned (No.), rest left-aligned
     fmt_parts = [f"{{:>{cols[0][2]}}}"] + [f"{{:{c[2]}}}" for c in cols[1:]]
     fmt = " ".join(fmt_parts)
     total_width = sum(c[2] for c in cols) + len(cols) - 1
     sep = "-" * total_width
-    print()
-    print("Direct Reports")
-    print()
     headers = [c[1] for c in cols]
     print(fmt.format(*headers))
     print(sep)
-    for r in direct_reports:
+    for r in reports:
         row = []
         for key, _header, width in cols:
             val = r.get(key)
@@ -328,7 +474,28 @@ def _list_direct_reports() -> None:
             row.append(s)
         print(fmt.format(*row))
     print(sep)
-    print(f"Total: {len(direct_reports)}")
+    print(f"Total: {len(reports)}")
+
+
+def _list_direct_reports() -> None:
+    """Display direct reports from file and from database separately."""
+    print("\n--- Direct Reports ---\n")
+    print("From file (direct_reports.json):")
+    if not direct_reports:
+        print("  No direct reports yet.")
+    else:
+        _print_direct_reports_table(direct_reports, "")
+    print()
+    print("From database:")
+    try:
+        db_reports = _db_load_direct_reports()
+        if not db_reports:
+            print("  No direct reports in database.")
+        else:
+            _print_direct_reports_table(db_reports, "")
+    except Exception as e:
+        print(f"  Error loading from database: {e}")
+    print("\nAdd or delete from the menu; data is saved to both file and database.")
 
 
 def _parse_optional_date(prompt: str) -> date | None:
@@ -581,6 +748,7 @@ def _load_management_tips() -> None:
                 management_tips = []
         except (json.JSONDecodeError, OSError):
             management_tips = []
+    _db_sync_management_tips_from_list(management_tips)
     last_date = management_tips[-1]["date"] if management_tips else None
     need_new_tip = not management_tips or last_date != today_str
     if need_new_tip and MISTRAL_AVAILABLE and _get_mistral_api_key():
@@ -588,10 +756,11 @@ def _load_management_tips() -> None:
 
 
 def _save_management_tips() -> None:
-    """Write the global management_tips list to file."""
+    """Write the global management_tips list to file and sync to database."""
     try:
         with open(MANAGEMENT_TIPS_FILE, "w", encoding="utf-8") as f:
             json.dump(management_tips, f, indent=2)
+        _db_sync_management_tips_from_list(management_tips)
     except OSError as e:
         print(f"Could not save management tips: {e}", file=sys.stderr)
 
@@ -690,14 +859,26 @@ Focus specifically on: {theme}. Give one concrete tip (not generic advice like "
 
 
 def _print_management_tips_by_date() -> None:
-    """Print all management tips grouped by date (oldest first)."""
+    """Print management tips from file and from database separately, by date."""
     _clear_screen()
     print("\n--- Management Tips by Date ---\n")
+    print("From file (management_tips.json):")
     if not management_tips:
-        print("No tips yet.")
-        return
-    for entry in management_tips:
-        print(f"  {entry['date']}:  {entry['text']}")
+        print("  No tips yet.")
+    else:
+        for entry in management_tips:
+            print(f"  {entry['date']}:  {entry['text']}")
+    print()
+    print("From database:")
+    try:
+        db_tips = _db_load_management_tips()
+        if not db_tips:
+            print("  No tips in database.")
+        else:
+            for entry in db_tips:
+                print(f"  {entry['date']}:  {entry['text']}")
+    except Exception as e:
+        print(f"  Error loading from database: {e}")
     print()
 
 
@@ -705,51 +886,70 @@ def _print_management_tips_by_date() -> None:
 # MILESTONE REMINDERS
 # ============================================================================
 
+def _compute_milestones_from_reports(reports: list[dict[str, Any]], range_days: int) -> list[tuple[int, str]]:
+    """Compute upcoming birthdays and anniversaries for the next range_days. Returns sorted list of (days_until, msg)."""
+    today = date.today()
+    upcoming: list[tuple[int, str]] = []
+    for r in reports:
+        bd = r.get("birthday")
+        if bd:
+            try:
+                bd_date = datetime.strptime(bd, "%Y-%m-%d").date()
+                next_bd = bd_date.replace(year=today.year)
+                days_until = (next_bd - today).days
+                if days_until < 0:
+                    next_bd = bd_date.replace(year=today.year + 1)
+                    days_until = (next_bd - today).days
+                if 0 <= days_until <= range_days:
+                    upcoming.append((days_until, f"Birthday: {r['first_name']} {r['last_name']} on {next_bd.strftime('%Y-%m-%d')} ({days_until} days)"))
+            except Exception:
+                pass
+        hd = r.get("hire_date")
+        if hd:
+            try:
+                hd_date = datetime.strptime(hd, "%Y-%m-%d").date()
+                anniv = hd_date.replace(year=today.year)
+                days_until = (anniv - today).days
+                if days_until < 0:
+                    anniv = hd_date.replace(year=today.year + 1)
+                    days_until = (anniv - today).days
+                if 0 <= days_until <= range_days:
+                    years = anniv.year - hd_date.year
+                    upcoming.append((days_until, f"Anniversary: {r['first_name']} {r['last_name']} ({years} years) on {anniv.strftime('%Y-%m-%d')} ({days_until} days)"))
+            except Exception:
+                pass
+    upcoming.sort()
+    return [(d, msg) for d, msg in upcoming]
+
+
 def _view_milestone_reminders() -> None | bool:
-    """Show upcoming birthdays and anniversaries for direct reports."""
+    """Show upcoming birthdays and anniversaries from file and database separately."""
     today = date.today()
 
     def _print_upcoming(range_days: int) -> None:
         _clear_screen()
         print("\n--- Milestone Reminders ---\n")
         print(f"Showing the next {range_days} days.\n")
-        upcoming = []
-        for r in direct_reports:
-            # Birthday
-            bd = r.get("birthday")
-            if bd:
-                try:
-                    bd_date = datetime.strptime(bd, "%Y-%m-%d").date()
-                    next_bd = bd_date.replace(year=today.year)
-                    days_until = (next_bd - today).days
-                    if days_until < 0:
-                        next_bd = bd_date.replace(year=today.year + 1)
-                        days_until = (next_bd - today).days
-                    if 0 <= days_until <= range_days:
-                        upcoming.append((days_until, f"Birthday: {r['first_name']} {r['last_name']} on {next_bd.strftime('%Y-%m-%d')} ({days_until} days)", bd_date))
-                except Exception:
-                    pass
-            # Work anniversary
-            hd = r.get("hire_date")
-            if hd:
-                try:
-                    hd_date = datetime.strptime(hd, "%Y-%m-%d").date()
-                    anniv = hd_date.replace(year=today.year)
-                    days_until = (anniv - today).days
-                    if days_until < 0:
-                        anniv = hd_date.replace(year=today.year + 1)
-                        days_until = (anniv - today).days
-                    if 0 <= days_until <= range_days:
-                        years = (anniv.year - hd_date.year)
-                        upcoming.append((days_until, f"Anniversary: {r['first_name']} {r['last_name']} ({years} years) on {anniv.strftime('%Y-%m-%d')} ({days_until} days)", hd_date))
-                except Exception:
-                    pass
-        if not upcoming:
-            print(f"No upcoming birthdays or anniversaries in the next {range_days} days.")
+        print("From file (direct_reports.json):")
+        file_upcoming = _compute_milestones_from_reports(direct_reports, range_days)
+        if not file_upcoming:
+            print("  No upcoming birthdays or anniversaries.")
         else:
-            upcoming.sort()
-            for _, msg, _ in upcoming:
-                print(msg)
+            for _, msg in file_upcoming:
+                print(f"  {msg}")
+        print()
+        print("From database:")
+        try:
+            db_reports = _db_load_direct_reports()
+            db_upcoming = _compute_milestones_from_reports(db_reports, range_days)
+            if not db_upcoming:
+                print("  No upcoming birthdays or anniversaries.")
+            else:
+                for _, msg in db_upcoming:
+                    print(f"  {msg}")
+        except Exception as e:
+            print(f"  Error loading from database: {e}")
+        print()
 
     _print_upcoming(30)
     while True:
@@ -886,7 +1086,7 @@ PEOPLE_MENU = _menu_box(
         ("  1. Upload 1:1 recording (summarize & action items)", False),
         ("  2. View 1:1 trends analysis", False),
         ("  3. Get suggested follow-up topics", False),
-        ("  4. View milestone reminders (anniversaries, birthdays)", True),
+        ("  4. View milestone reminders (anniversaries, birthdays)", True, True),  # red
         ("  5. Administer Direct Reports", True, True),  # red
         ("  6. View management tips by date", True, True),  # red
         ("  7. Back to main menu", True),
@@ -966,6 +1166,8 @@ def authenticate() -> bool:
 def main() -> None:
     """Run the CLI: load data, then main menu loop."""
     print("Welcome to WingmanEM.\n")
+    _db_init()
+    _db_populate_from_json_files()
     _load_direct_reports()
     _load_management_tips()
 # Will be used later:

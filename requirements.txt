@@ -1,5 +1,6 @@
 # WingmanEM dependencies
 # Chunk #1–2: CLI prototype and direct-reports persistence use the Python standard library (e.g. json).
+# Chunk #3: Persistence uses SQLite (stdlib sqlite3) and JSON files; DB and files kept in sync.
 # Add package names and versions here as features are added, e.g.:
 # requests>=2.28.0
 mistralai

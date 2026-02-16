@@ -114,4 +114,15 @@ The file and global variable 'direct_reports' should contain the same data.
 The DirectReport dictionary should be refactored to mirror the Table Direct_Reports structure specified above. All elements in DirectReports should be optional except first_name, last_name and id. All functionality should be updated for this change to DirectReport.
 
 ### Chunk #3:
- 
+To implment this chunk, add a SQLite database to manage perisistence with the following criteria:
+
+Core files to update:
+app.py
+requirements.txt
+
+Add a SQLite database to this project
+Create tables for direct reports and management tips in the database and model these table after the data contained in the direct_reports.json and management_tips.json file respectively.
+Populate these tables with the data contained in the direct_reports.json and management_tips.json files
+Update the all the app functionality that manipulates the data in the the direct_reports.json and management_tips.json files to do the same manipulation in the database so that the files and the database stay in sync with the same data.
+When listing direct reports or management tips the user the results should be shown from both the file and database seperately.
+The app should function the same as they have before this change with the addition of having the data housed in the database.
