@@ -888,7 +888,7 @@ PEOPLE_MENU = _menu_box(
         ("  3. Get suggested follow-up topics", False),
         ("  4. View milestone reminders (anniversaries, birthdays)", True),
         ("  5. Administer Direct Reports", True, True),  # red
-        ("  6. View management tips by date", True),
+        ("  6. View management tips by date", True, True),  # red
         ("  7. Back to main menu", True),
     ],
 )
