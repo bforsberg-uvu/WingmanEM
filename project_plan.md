@@ -126,3 +126,5 @@ Populate these tables with the data contained in the direct_reports.json and man
 Update the all the app functionality that manipulates the data in the the direct_reports.json and management_tips.json files to do the same manipulation in the database so that the files and the database stay in sync with the same data.
 When listing direct reports or management tips the user the results should be shown from both the file and database seperately.
 The app should function the same as they have before this change with the addition of having the data housed in the database.
+
+### 7

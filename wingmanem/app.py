@@ -86,6 +86,14 @@ def _db_init() -> None:
                 text TEXT NOT NULL
             )
         """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS one_to_one_summaries (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                direct_report_id INTEGER NOT NULL,
+                date TEXT NOT NULL,
+                response_text TEXT NOT NULL
+            )
+        """)
         conn.commit()
     finally:
         conn.close()
@@ -195,6 +203,58 @@ def _db_populate_from_json_files() -> None:
                 _db_sync_management_tips_from_list(tips)
         except (json.JSONDecodeError, OSError):
             pass
+
+
+def _db_insert_one_to_one_summary(direct_report_id: int, date_str: str, response_text: str) -> None:
+    """Store a 1:1 summary for a direct report and date."""
+    conn = _db_connection()
+    try:
+        conn.execute(
+            "INSERT INTO one_to_one_summaries (direct_report_id, date, response_text) VALUES (?, ?, ?)",
+            (direct_report_id, date_str, response_text),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def _db_get_one_to_one_summaries(direct_report_id: int) -> list[dict[str, Any]]:
+    """Get all 1:1 summaries for a direct report, sorted by date (oldest first)."""
+    conn = _db_connection()
+    try:
+        cur = conn.execute(
+            "SELECT id, direct_report_id, date, response_text FROM one_to_one_summaries WHERE direct_report_id = ? ORDER BY date",
+            (direct_report_id,),
+        )
+        rows = cur.fetchall()
+        return [{"id": r[0], "direct_report_id": r[1], "date": r[2], "response_text": r[3]} for r in rows]
+    finally:
+        conn.close()
+
+
+def _db_delete_one_to_one_by_report_and_date(direct_report_id: int, date_str: str) -> bool:
+    """Delete the 1:1 summary for a direct report on a specific date. Returns True if a row was deleted."""
+    conn = _db_connection()
+    try:
+        cur = conn.execute(
+            "DELETE FROM one_to_one_summaries WHERE direct_report_id = ? AND date = ?",
+            (direct_report_id, date_str),
+        )
+        conn.commit()
+        return cur.rowcount > 0
+    finally:
+        conn.close()
+
+
+def _db_purge_one_to_one_for_report(direct_report_id: int) -> int:
+    """Delete all 1:1 summaries for a direct report. Returns number of rows deleted."""
+    conn = _db_connection()
+    try:
+        cur = conn.execute("DELETE FROM one_to_one_summaries WHERE direct_report_id = ?", (direct_report_id,))
+        conn.commit()
+        return cur.rowcount
+    finally:
+        conn.close()
 
 
 # ============================================================================
@@ -967,6 +1027,160 @@ def _view_milestone_reminders() -> None | bool:
 
 
 # ============================================================================
+# 1:1 RECORDINGS: Upload, View, Delete, Purge (Chunk #4)
+# ============================================================================
+
+def _prompt_direct_report_id() -> int | None:
+    """Show direct reports (short list), prompt for ID; return id or None to cancel."""
+    if not direct_reports:
+        print("\nNo direct reports. Add one from Administer Direct Reports first.")
+        return None
+    print("Direct reports:")
+    for r in direct_reports:
+        print(f"  ID {r.get('id')}: {r.get('first_name', '')} {r.get('last_name', '')}")
+    raw = input("\nEnter the direct report ID for this 1:1 (or Enter to cancel): ").strip()
+    if not raw:
+        return None
+    try:
+        target_id = int(raw)
+    except ValueError:
+        print("Invalid ID.")
+        return None
+    if not any(r.get("id") == target_id for r in direct_reports):
+        print(f"No direct report with ID {target_id}.")
+        return None
+    return target_id
+
+
+def _upload_one_to_one_recording() -> None:
+    """Let user pick a direct report and audio file; transcribe with Mistral, summarize with action items; store in DB."""
+    _clear_screen()
+    print("\n--- Upload 1:1 Recording ---\n")
+    if not MISTRAL_AVAILABLE:
+        print("Mistral AI is not installed. Install it with: pip install mistralai")
+        return
+    api_key = _get_mistral_api_key()
+    if not api_key:
+        print("Mistral API key not found. Set MISTRAL_API_KEY environment variable.")
+        return
+    report_id = _prompt_direct_report_id()
+    if report_id is None:
+        return
+    path = input("Enter path to audio file (e.g. .mp3, .wav, .m4a): ").strip()
+    if not path:
+        print("No file path entered.")
+        return
+    if not os.path.isfile(path):
+        print(f"File not found: {path}")
+        return
+    filename = os.path.basename(path)
+    print(f"\nTranscribing and analyzing with Mistral AI...")
+    try:
+        client = Mistral(api_key=api_key)
+        with open(path, "rb") as f:
+            trans = client.audio.transcriptions.complete(
+                model="voxtral-mini-latest",
+                file={"file_name": filename, "content": f.read()},
+            )
+        transcript = (getattr(trans, "text", None) or "").strip()
+        if not transcript:
+            print("No speech detected in the audio.")
+            return
+        prompt = """Based on the following 1:1 meeting transcript, provide:
+1) A brief summary (2–4 sentences).
+2) A list of action items and to-dos (who does what, if clear).
+3) Suggested follow-up topics for the next meeting.
+
+Format the response clearly with headings (Summary, Action Items, Follow-ups). Use bullet points for lists."""
+        full_prompt = f"{prompt}\n\n--- Transcript ---\n{transcript}"
+        msg = client.chat.complete(
+            model="mistral-large-latest",
+            messages=[{"role": "user", "content": full_prompt}],
+        )
+        content = msg.choices[0].message.content or ""
+        if isinstance(content, list):
+            content = "".join(
+                p.get("text", p.get("content", "")) if isinstance(p, dict) else str(p) for p in content
+            )
+        response_text = content.strip()
+        if not response_text:
+            print("Mistral returned an empty response.")
+            return
+        print("\n" + "=" * 60)
+        print("1:1 Summary & Action Items")
+        print("=" * 60)
+        print(response_text)
+        print("=" * 60)
+        date_str = date.today().isoformat()
+        _db_insert_one_to_one_summary(report_id, date_str, response_text)
+        print(f"\nSaved to database for direct report ID {report_id} on {date_str}.")
+    except Exception as e:
+        err = str(e).lower()
+        if "401" in err or "unauthorized" in err:
+            print("Mistral API key invalid or expired. Set MISTRAL_API_KEY.")
+        elif "timeout" in err or "connection" in err:
+            print("Network error. Check your connection and try again.")
+        else:
+            print(f"Error: {e}")
+
+
+def _view_one_to_one_responses() -> None:
+    """View 1:1 summaries for a direct report, sorted by date."""
+    _clear_screen()
+    print("\n--- View 1:1 Responses by Direct Report ---\n")
+    report_id = _prompt_direct_report_id()
+    if report_id is None:
+        return
+    summaries = _db_get_one_to_one_summaries(report_id)
+    if not summaries:
+        print(f"\nNo 1:1 summaries stored for direct report ID {report_id}.")
+        return
+    for s in summaries:
+        print("\n" + "-" * 50)
+        print(f"Date: {s['date']}")
+        print("-" * 50)
+        print(s["response_text"])
+    print()
+
+
+def _delete_one_to_one_response() -> None:
+    """Delete a specific 1:1 response for a direct report by date."""
+    _clear_screen()
+    print("\n--- Delete 1:1 Response ---\n")
+    report_id = _prompt_direct_report_id()
+    if report_id is None:
+        return
+    summaries = _db_get_one_to_one_summaries(report_id)
+    if not summaries:
+        print(f"\nNo 1:1 summaries for direct report ID {report_id}.")
+        return
+    print("\nSummaries by date:")
+    for s in summaries:
+        print(f"  {s['date']}")
+    date_str = input("\nEnter the date to delete (YYYY-MM-DD) or Enter to cancel: ").strip()
+    if not date_str:
+        return
+    if _db_delete_one_to_one_by_report_and_date(report_id, date_str):
+        print(f"Deleted 1:1 response for {date_str}.")
+    else:
+        print(f"No response found for date {date_str}.")
+
+
+def _purge_one_to_one_responses() -> None:
+    """Purge all 1:1 responses for a direct report."""
+    _clear_screen()
+    print("\n--- Purge All 1:1 Responses for a Direct Report ---\n")
+    report_id = _prompt_direct_report_id()
+    if report_id is None:
+        return
+    n = _db_purge_one_to_one_for_report(report_id)
+    if n > 0:
+        print(f"Purged {n} 1:1 response(s) for direct report ID {report_id}.")
+    else:
+        print(f"No 1:1 responses found for direct report ID {report_id}.")
+
+
+# ============================================================================
 # MENUS: Main Menu
 # ============================================================================
 
@@ -1080,10 +1294,37 @@ def run_project_estimation_menu() -> None:
 # MENUS: People Management & Coaching
 # ============================================================================
 
+ONE_TO_ONE_MENU = _menu_box(
+    "           1:1 Recordings (Upload, View, Delete)",
+    [
+        ("  1. Upload 1:1 recording (summarize & action items)", True),
+        ("  2. View 1:1 responses by direct report", True),
+        ("  3. Delete a 1:1 response by date", True),
+        ("  4. Purge all 1:1 responses for a direct report", True),
+        ("  5. Back to previous menu", True),
+    ],
+)
+
+
+def run_one_to_one_menu() -> bool:
+    """1:1 recordings submenu; returns True to skip pause."""
+    _run_submenu(
+        ONE_TO_ONE_MENU,
+        5,
+        {
+            1: _upload_one_to_one_recording,
+            2: _view_one_to_one_responses,
+            3: _delete_one_to_one_response,
+            4: _purge_one_to_one_responses,
+        },
+    )
+    return True
+
+
 PEOPLE_MENU = _menu_box(
     "           People Management & Coaching",
     [
-        ("  1. Upload 1:1 recording (summarize & action items)", False),
+        ("  1. Upload 1:1 recording (summarize & action items)", True),
         ("  2. View 1:1 trends analysis", False),
         ("  3. Get suggested follow-up topics", False),
         ("  4. View milestone reminders (anniversaries, birthdays)", True, True),  # red
@@ -1100,7 +1341,7 @@ def run_people_coaching_menu() -> None:
         PEOPLE_MENU,
         7,
         {
-            1: lambda: print("\n[Placeholder] Upload 1:1 recording — not yet implemented."),
+            1: run_one_to_one_menu,
             2: lambda: print("\n[Placeholder] View 1:1 trends — not yet implemented."),
             3: lambda: print("\n[Placeholder] Suggested follow-up topics — not yet implemented."),
             4: _view_milestone_reminders,
