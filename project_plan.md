@@ -112,3 +112,6 @@ The 'List direct reports' function should be able to iterate through the 'direct
 whenever a direct report is added or deleted the global variable list 'direct_report' should be written out (mirrored) to a file. When the program starts up, this file should be read into the global variable 'direct_reports'
 The file and global variable 'direct_reports' should contain the same data.
 The DirectReport dictionary should be refactored to mirror the Table Direct_Reports structure specified above. All elements in DirectReports should be optional except first_name, last_name and id. All functionality should be updated for this change to DirectReport.
+
+### Chunk #3:
+ 

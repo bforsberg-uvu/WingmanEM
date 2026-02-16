@@ -6,6 +6,7 @@ Main application logic: menu-driven navigation and password protection.
 import getpass
 import json
 import os
+import random
 import sys
 from collections.abc import Callable
 from datetime import date, datetime
@@ -30,7 +31,8 @@ DIRECT_REPORT_OPTIONAL_KEYS = (
 
 # Global data
 direct_reports: list[dict[str, Any]] = []
-management_tips: list[str] = []
+# Each item: {"date": "YYYY-MM-DD", "text": "tip content"}
+management_tips: list[dict[str, str]] = []
 
 # Persistence files
 DIRECT_REPORTS_FILE = "direct_reports.json"
@@ -210,6 +212,19 @@ def _next_direct_report_id() -> int:
     return max_id + 1
 
 
+def _direct_report_name_key(r: dict[str, Any]) -> str:
+    """Return a normalized key for first_name + last_name (for duplicate check)."""
+    first = (r.get("first_name") or "").strip().lower()
+    last = (r.get("last_name") or "").strip().lower()
+    return f"{first}|{last}"
+
+
+def _is_duplicate_direct_report(data: dict[str, Any], existing_keys: set[str]) -> bool:
+    """Return True if this report's first_name+last_name is already in existing_keys."""
+    key = _direct_report_name_key(data)
+    return bool(key and key in existing_keys)
+
+
 def _normalize_direct_report(r: dict[str, Any]) -> dict[str, Any]:
     """Ensure dict has Direct_Reports table keys; migrate old camelCase keys."""
     key_map = {
@@ -232,10 +247,12 @@ def _normalize_direct_report(r: dict[str, Any]) -> dict[str, Any]:
 
 
 def _load_direct_reports() -> None:
-    """Read direct_reports from file into the global list; normalize keys and assign missing ids."""
+    """Read direct_reports from file into the global list; normalize keys and assign missing ids.
+    If the file does not exist, start with an empty list and create the file."""
     global direct_reports
     if not os.path.isfile(DIRECT_REPORTS_FILE):
         direct_reports = []
+        _save_direct_reports()
         return
     try:
         with open(DIRECT_REPORTS_FILE, encoding="utf-8") as f:
@@ -420,61 +437,101 @@ def _generate_direct_reports_with_ai() -> None:
     
     try:
         client = Mistral(api_key=api_key)
-        prompt = f"""Generate {num} realistic direct reports for a manager. Each report should have a diverse, realistic background.
-        
-For each person, provide ONLY valid JSON (no markdown, no extra text) in this exact format:
-{{
-  "first_name": "FirstName",
-  "last_name": "LastName",
-  "street_address_1": "123 Main St",
-  "street_address_2": "Apt 4B",
-  "city": "CityName",
-  "state": "ST",
-  "zipcode": "12345",
-  "country": "USA",
-  "birthday": "1985-06-15",
-  "hire_date": "2020-01-10",
-  "current_role": "Senior Engineer",
-  "role_start_date": "2023-03-01",
-  "partner_name": "Partner Name or null"
-}}
+        existing_names = {_direct_report_name_key(r) for r in direct_reports}
+        avoid_names_instruction = ""
+        if existing_names:
+            names_list = [f"{r.get('first_name', '')} {r.get('last_name', '')}".strip() for r in direct_reports[:30]]
+            avoid_names_instruction = f"\nDo NOT create any person with the same first and last name as any of these existing people: {names_list}. All new reports must have unique first and last names."
+        prompt = f"""Generate exactly {num} realistic direct reports for a manager. Each report should have a diverse, realistic background.{avoid_names_instruction}
 
-Provide {num} JSON objects, one per line (not in an array). Ensure all dates are in YYYY-MM-DD format."""
+Return a single JSON object with a key "reports" whose value is an array of {num} objects. Each object must have exactly these keys (use null for optional fields if needed): first_name, last_name, street_address_1, street_address_2, city, state, zipcode, country, birthday, hire_date, current_role, role_start_date, partner_name. Dates must be YYYY-MM-DD. Each person must have a unique first_name and last_name combination. Example structure:
+{{"reports": [{{"first_name": "Jane", "last_name": "Doe", "street_address_1": "123 Main St", "street_address_2": null, "city": "Boston", "state": "MA", "zipcode": "02101", "country": "USA", "birthday": "1990-05-15", "hire_date": "2021-03-01", "current_role": "Senior Engineer", "role_start_date": "2023-01-01", "partner_name": null}}, ...]}}
+
+Output only this JSON object, no other text."""
         
-        message = client.chat.complete(
-            model="mistral-large-latest",
-            messages=[{"role": "user", "content": prompt}]
-        )
-        
-        response_text = message.choices[0].message.content.strip()
-        lines = response_text.split("\n")
-        
+        try:
+            message = client.chat.complete(
+                model="mistral-large-latest",
+                messages=[{"role": "user", "content": prompt}],
+                response_format={"type": "json_object"},
+            )
+        except TypeError:
+            message = client.chat.complete(
+                model="mistral-large-latest",
+                messages=[{"role": "user", "content": prompt}],
+            )
+        msg_content = message.choices[0].message.content
+        if isinstance(msg_content, list):
+            raw = "".join(
+                p.get("text", p.get("content", "")) if isinstance(p, dict) else str(p)
+                for p in msg_content
+            )
+        else:
+            raw = msg_content or ""
+        response_text = raw.strip()
+        # Strip markdown code fence if model still adds it
+        if response_text.startswith("```"):
+            end = response_text.find("\n", 3)
+            if end != -1:
+                response_text = response_text[end + 1 :].rstrip()
+            if response_text.endswith("```"):
+                response_text = response_text[:-3].rstrip()
+
+        objects: list[dict] = []
+        try:
+            parsed = json.loads(response_text)
+            if isinstance(parsed, dict):
+                arr = parsed.get("reports") or parsed.get("direct_reports")
+                if isinstance(arr, list):
+                    objects = [x for x in arr if isinstance(x, dict)]
+                if not objects:
+                    for v in parsed.values():
+                        if isinstance(v, list) and v and isinstance(v[0], dict):
+                            objects = [x for x in v if isinstance(x, dict)]
+                            break
+            elif isinstance(parsed, list):
+                objects = [x for x in parsed if isinstance(x, dict)]
+        except (json.JSONDecodeError, TypeError):
+            pass
+        if not objects and os.environ.get("WINGMANEM_DEBUG"):
+            print(f"[Debug] Raw response (first 800 chars):\n{raw[:800]!r}", file=sys.stderr)
+        keys_already_used = set(existing_names)
         added_count = 0
-        for line in lines:
-            line = line.strip()
-            if not line or line.startswith("#"):
+        for data in objects:
+            if _is_duplicate_direct_report(data, keys_already_used):
+                fn = (data.get("first_name") or "").strip()
+                ln = (data.get("last_name") or "").strip()
+                print(f"  Skipped duplicate: {fn} {ln}")
                 continue
             try:
-                data = json.loads(line)
                 report = _normalize_direct_report({
                     "id": _next_direct_report_id(),
                     **data
                 })
                 direct_reports.append(report)
+                keys_already_used.add(_direct_report_name_key(report))
                 added_count += 1
                 print(f"  ✓ Added: {report['first_name']} {report['last_name']}")
-            except (json.JSONDecodeError, ValueError) as e:
-                pass  # Skip malformed lines
+            except (ValueError, TypeError):
+                pass
         
         if added_count > 0:
             _save_direct_reports()
             print(f"\nSuccessfully added {added_count} direct reports.")
         else:
             print("\nCould not parse any valid direct reports from the response.")
+            if os.environ.get("WINGMANEM_DEBUG"):
+                print(f"[Debug] Raw response (first 600 chars):\n{raw[:600]!r}", file=sys.stderr)
     
     except Exception as e:
-        print(f"Error calling Mistral AI: {e}")
-        print("\nMake sure your MISTRAL_API_KEY is valid.")
+        err = str(e).lower()
+        if "401" in err or "unauthorized" in err or "invalid" in err and "key" in err:
+            print("\nMistral API key invalid or expired. Set a valid MISTRAL_API_KEY in your environment.")
+        elif "timeout" in err or "connection" in err or "network" in err:
+            print("\nNetwork error connecting to Mistral AI. Check your internet connection and try again.")
+        else:
+            print(f"\nError calling Mistral AI: {e}")
+        print("Example: export MISTRAL_API_KEY=your_key_here")
 
 
 def _purge_direct_reports() -> None | bool:
@@ -499,20 +556,35 @@ def _purge_direct_reports() -> None | bool:
 # ============================================================================
 
 def _load_management_tips() -> None:
-    """Read management tips from file into the global list."""
+    """Read management tips (date + text) from file into the global list.
+    File format: list of {"date": "YYYY-MM-DD", "text": "..."}.
+    Legacy: list of plain strings is migrated to new format with date set to today.
+    If the file does not exist, start with an empty list and create the file.
+    If the list is empty or we have not fetched a tip today, fetch a new tip from Mistral AI if available."""
     global management_tips
+    today_str = date.today().isoformat()
     if not os.path.isfile(MANAGEMENT_TIPS_FILE):
         management_tips = []
-        return
-    try:
-        with open(MANAGEMENT_TIPS_FILE, encoding="utf-8") as f:
-            data = json.load(f)
-        if isinstance(data, list):
-            management_tips = [str(t).strip() for t in data if str(t).strip()]
-        else:
+        _save_management_tips()
+    else:
+        try:
+            with open(MANAGEMENT_TIPS_FILE, encoding="utf-8") as f:
+                data = json.load(f)
+            if isinstance(data, list):
+                management_tips = []
+                for item in data:
+                    if isinstance(item, dict) and item.get("date") and item.get("text"):
+                        management_tips.append({"date": str(item["date"])[:10], "text": str(item["text"]).strip()})
+                    elif isinstance(item, str) and item.strip():
+                        management_tips.append({"date": today_str, "text": item.strip()})
+            else:
+                management_tips = []
+        except (json.JSONDecodeError, OSError):
             management_tips = []
-    except (json.JSONDecodeError, OSError):
-        management_tips = []
+    last_date = management_tips[-1]["date"] if management_tips else None
+    need_new_tip = not management_tips or last_date != today_str
+    if need_new_tip and MISTRAL_AVAILABLE and _get_mistral_api_key():
+        _generate_management_tip_with_ai(silent=True)
 
 
 def _save_management_tips() -> None:
@@ -525,10 +597,108 @@ def _save_management_tips() -> None:
 
 
 def _get_latest_management_tip() -> str:
-    """Return the most recent management tip, or a placeholder if none."""
+    """Return the most recent management tip text, or a placeholder if none."""
     if management_tips:
-        return management_tips[-1]
+        return management_tips[-1]["text"]
     return "No tip yet. Generate one from Mistral AI."
+
+
+def _normalize_tip_for_comparison(tip: str) -> str:
+    """Normalize tip text for duplicate check: lowercase, single spaces, no leading/trailing space."""
+    return " ".join(tip.lower().split())
+
+
+def _is_duplicate_management_tip(text: str) -> bool:
+    """Return True if the tip text is effectively a duplicate of any existing tip in management_tips."""
+    if not text:
+        return False
+    normalized_new = _normalize_tip_for_comparison(text)
+    for entry in management_tips:
+        if _normalize_tip_for_comparison(entry["text"]) == normalized_new:
+            return True
+    return False
+
+
+def _generate_management_tip_with_ai(*, silent: bool = False) -> bool:
+    """Generate one daily management tip using Mistral AI; append and save. Returns True on success.
+    If the suggested tip is a duplicate of an existing one, requests a different tip (up to a few retries).
+    If silent is True, do not print success message (e.g. when seeding on startup)."""
+    global management_tips
+    if not MISTRAL_AVAILABLE:
+        if not silent:
+            print("\nMistral AI is not installed. Install it with: pip install mistralai")
+        return False
+    api_key = _get_mistral_api_key()
+    if not api_key:
+        if not silent:
+            print("\nMistral API key not found. Set MISTRAL_API_KEY environment variable.")
+        return False
+    base_prompt = """Generate exactly one short, actionable daily management tip for an engineering manager.
+Keep it to one or two sentences. No bullet points or numbering. Output only the tip text, nothing else."""
+    max_attempts = 5
+    try:
+        client = Mistral(api_key=api_key)
+        for attempt in range(max_attempts):
+            avoid_all = [e["text"] for e in management_tips[-20:]]
+            if avoid_all:
+                avoid = "; ".join(repr(t) for t in avoid_all)
+                prompt = f"""{base_prompt}
+
+Do NOT suggest any of these tips (already in your history). Suggest something different:
+{avoid}"""
+            else:
+                # No history (e.g. file missing): pick a random theme so we get a different tip each time
+                today_str = date.today().isoformat()
+                themes = [
+                    "delegation", "conflict resolution", "motivation", "career growth",
+                    "running meetings", "prioritization", "remote work", "recognition",
+                    "1:1 conversations", "accountability", "giving feedback", "hiring",
+                    "burnout prevention", "goal setting", "difficult conversations",
+                ]
+                theme = random.choice(themes)
+                prompt = f"""Today is {today_str}. Generate exactly one short, actionable daily management tip for an engineering manager.
+Focus specifically on: {theme}. Give one concrete tip (not generic advice like "listen to your team"). One or two sentences only. Output only the tip text, nothing else."""
+            message = client.chat.complete(
+                model="mistral-large-latest",
+                messages=[{"role": "user", "content": prompt}],
+            )
+            text = (message.choices[0].message.content or "").strip()
+            if not text:
+                if not silent and attempt == max_attempts - 1:
+                    print("\nMistral AI returned an empty tip.")
+                continue
+            if _is_duplicate_management_tip(text):
+                continue
+            management_tips.append({"date": date.today().isoformat(), "text": text})
+            _save_management_tips()
+            if not silent:
+                print(f"\nDaily tip generated: {text}")
+            return True
+        if not silent:
+            print("\nCould not get a non-duplicate tip after several attempts.")
+        return False
+    except Exception as e:
+        err = str(e).lower()
+        if "401" in err or "unauthorized" in err or "invalid" in err and "key" in err:
+            print("\nMistral API key invalid or expired. Set a valid MISTRAL_API_KEY in your environment.")
+        elif "timeout" in err or "connection" in err or "network" in err:
+            print("\nNetwork error connecting to Mistral AI. Check your internet connection and try again.")
+        else:
+            print(f"\nError calling Mistral AI: {e}")
+        print("Example: export MISTRAL_API_KEY=your_key_here")
+        return False
+
+
+def _print_management_tips_by_date() -> None:
+    """Print all management tips grouped by date (oldest first)."""
+    _clear_screen()
+    print("\n--- Management Tips by Date ---\n")
+    if not management_tips:
+        print("No tips yet.")
+        return
+    for entry in management_tips:
+        print(f"  {entry['date']}:  {entry['text']}")
+    print()
 
 
 # ============================================================================
@@ -616,12 +786,14 @@ def _build_main_menu() -> str:
             "",
             (
                 "Instructions For Dr. Riskas:",
-                " Navigate to 'Administer Direct Reports' (select red options) to see code "
-                "refactor in action.  There is an option to create direct reports from Mistral AI "
-                "so you don't have to manually enter them. "
-                "When a direct report is added or deleted, the data is "
-                "saved to a file (direct_reports.json) and read back in when the program "
-                "starts up. So the data will persist between program runs.  ",
+                " You can navigate to either 'Administer Direct Reports' or 'View Management Tips by Date'"
+                "(select red options) to see file operations in action. There are two files direct_reports.json"
+                " and management_tips.json that store the data for the direct reports and management tips respectively. "
+                "Management tips are generated by Mistral AI daily and are stored in the management_tips.json file. "
+                "When a direct report is added or deleted, the data is persisted to direct_reports.json. "  
+                "Both files are read back in when the program starts up for persistence. If one or both files are missing, "
+                "the program will function as normal."
+                ,
             ),
             "",
         ],
@@ -716,7 +888,8 @@ PEOPLE_MENU = _menu_box(
         ("  3. Get suggested follow-up topics", False),
         ("  4. View milestone reminders (anniversaries, birthdays)", True),
         ("  5. Administer Direct Reports", True, True),  # red
-        ("  6. Back to main menu", True),
+        ("  6. View management tips by date", True),
+        ("  7. Back to main menu", True),
     ],
 )
 
@@ -725,13 +898,14 @@ def run_people_coaching_menu() -> None:
     """Sub-menu for people management and coaching."""
     _run_submenu(
         PEOPLE_MENU,
-        6,
+        7,
         {
             1: lambda: print("\n[Placeholder] Upload 1:1 recording — not yet implemented."),
             2: lambda: print("\n[Placeholder] View 1:1 trends — not yet implemented."),
             3: lambda: print("\n[Placeholder] Suggested follow-up topics — not yet implemented."),
             4: _view_milestone_reminders,
             5: run_direct_reports_menu,
+            6: _print_management_tips_by_date,
         },
     )
 
