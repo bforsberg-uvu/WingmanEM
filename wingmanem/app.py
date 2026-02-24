@@ -1,6 +1,20 @@
 """
-WingmanEM CLI prototype Chunk #2
-Main application logic: menu-driven navigation and password protection.
+WingmanEM — Engineering Manager CLI.
+
+Menu-driven app: direct reports, management tips (Mistral AI), milestone reminders,
+1:1 recording upload/summary (Mistral), SQLite + JSON persistence.
+
+Sections (in order):
+  1. Configuration & constants (paths, globals, ANSI)
+  2. Database (SQLite init, sync, load for direct_reports, management_tips, one_to_one)
+  3. Utilities (config, I/O, menu box & submenu)
+  4. Direct reports (model, load/save, list/add/delete/generate/purge)
+  5. Management tips (load/save, daily tip from Mistral, view by date)
+  6. Milestone reminders (birthdays, anniversaries)
+  7. 1:1 recordings (upload, view, delete, purge)
+  8. Menus (main, developer, project, people, one-to-one, direct reports)
+  9. Authentication
+ 10. Entry point (main)
 """
 
 import getpass
@@ -21,7 +35,7 @@ except ImportError:
 
 
 # ============================================================================
-# GLOBAL CONFIG & CONSTANTS
+# CONFIGURATION & CONSTANTS — paths, globals, ANSI colors
 # ============================================================================
 
 # Direct_Reports table structure (project_plan.md): required id, first_name, last_name; rest optional
@@ -49,58 +63,68 @@ _MENU_BOLD = "\033[1m"
 
 
 # ============================================================================
-# SQLite DATABASE (Chunk #3)
+# DATABASE — SQLite (tables: direct_reports, management_tips, one_to_one_summaries)
 # ============================================================================
 
+_db_available: bool = True  # Set False if DB file missing or init fails; app runs without DB.
+
+
 def _db_connection() -> sqlite3.Connection:
-    """Return a connection to the SQLite database."""
+    """Return a connection to the SQLite database. SQLite creates the file if not present."""
     return sqlite3.connect(DATABASE_PATH)
 
 
 def _db_init() -> None:
-    """Create database and tables if they do not exist. Modeled after JSON file structures."""
-    conn = _db_connection()
+    """Create database and tables if they do not exist. Handles missing DB file (SQLite creates it)."""
+    global _db_available
     try:
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS direct_reports (
-                id INTEGER PRIMARY KEY,
-                first_name TEXT,
-                last_name TEXT,
-                street_address_1 TEXT,
-                street_address_2 TEXT,
-                city TEXT,
-                state TEXT,
-                zipcode TEXT,
-                country TEXT,
-                birthday TEXT,
-                hire_date TEXT,
-                current_role TEXT,
-                role_start_date TEXT,
-                partner_name TEXT
-            )
-        """)
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS management_tips (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                date TEXT NOT NULL,
-                text TEXT NOT NULL
-            )
-        """)
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS one_to_one_summaries (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                direct_report_id INTEGER NOT NULL,
-                date TEXT NOT NULL,
-                response_text TEXT NOT NULL
-            )
-        """)
-        conn.commit()
-    finally:
-        conn.close()
+        conn = _db_connection()
+        try:
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS direct_reports (
+                    id INTEGER PRIMARY KEY,
+                    first_name TEXT,
+                    last_name TEXT,
+                    street_address_1 TEXT,
+                    street_address_2 TEXT,
+                    city TEXT,
+                    state TEXT,
+                    zipcode TEXT,
+                    country TEXT,
+                    birthday TEXT,
+                    hire_date TEXT,
+                    current_role TEXT,
+                    role_start_date TEXT,
+                    partner_name TEXT
+                )
+            """)
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS management_tips (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    date TEXT NOT NULL,
+                    text TEXT NOT NULL
+                )
+            """)
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS one_to_one_summaries (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    direct_report_id INTEGER NOT NULL,
+                    date TEXT NOT NULL,
+                    response_text TEXT NOT NULL
+                )
+            """)
+            conn.commit()
+        finally:
+            conn.close()
+    except (sqlite3.Error, OSError) as e:
+        _db_available = False
+        print(f"Database unavailable (will run without DB): {e}", file=sys.stderr)
 
 
 def _db_sync_direct_reports_from_list(reports: list[dict[str, Any]]) -> None:
     """Replace direct_reports table content with the given list (keeps file and DB in sync)."""
+    if not _db_available:
+        return
     conn = _db_connection()
     try:
         conn.execute("DELETE FROM direct_reports")
@@ -135,6 +159,8 @@ def _db_sync_direct_reports_from_list(reports: list[dict[str, Any]]) -> None:
 
 def _db_sync_management_tips_from_list(tips: list[dict[str, str]]) -> None:
     """Replace management_tips table content with the given list (keeps file and DB in sync)."""
+    if not _db_available:
+        return
     conn = _db_connection()
     try:
         conn.execute("DELETE FROM management_tips")
@@ -150,6 +176,8 @@ def _db_sync_management_tips_from_list(tips: list[dict[str, str]]) -> None:
 
 def _db_load_direct_reports() -> list[dict[str, Any]]:
     """Load all direct reports from the database as list of dicts (same keys as JSON)."""
+    if not _db_available:
+        return []
     conn = _db_connection()
     try:
         conn.row_factory = sqlite3.Row
@@ -166,6 +194,8 @@ def _db_load_direct_reports() -> list[dict[str, Any]]:
 
 def _db_load_management_tips() -> list[dict[str, str]]:
     """Load all management tips from the database as list of dicts with date and text."""
+    if not _db_available:
+        return []
     conn = _db_connection()
     try:
         conn.row_factory = sqlite3.Row
@@ -178,6 +208,8 @@ def _db_load_management_tips() -> list[dict[str, str]]:
 
 def _db_populate_from_json_files() -> None:
     """Populate database tables from JSON files if the files exist. Called at startup."""
+    if not _db_available:
+        return
     if os.path.isfile(DIRECT_REPORTS_FILE):
         try:
             with open(DIRECT_REPORTS_FILE, encoding="utf-8") as f:
@@ -207,6 +239,8 @@ def _db_populate_from_json_files() -> None:
 
 def _db_insert_one_to_one_summary(direct_report_id: int, date_str: str, response_text: str) -> None:
     """Store a 1:1 summary for a direct report and date."""
+    if not _db_available:
+        return
     conn = _db_connection()
     try:
         conn.execute(
@@ -220,6 +254,8 @@ def _db_insert_one_to_one_summary(direct_report_id: int, date_str: str, response
 
 def _db_get_one_to_one_summaries(direct_report_id: int) -> list[dict[str, Any]]:
     """Get all 1:1 summaries for a direct report, sorted by date (oldest first)."""
+    if not _db_available:
+        return []
     conn = _db_connection()
     try:
         cur = conn.execute(
@@ -234,6 +270,8 @@ def _db_get_one_to_one_summaries(direct_report_id: int) -> list[dict[str, Any]]:
 
 def _db_delete_one_to_one_by_report_and_date(direct_report_id: int, date_str: str) -> bool:
     """Delete the 1:1 summary for a direct report on a specific date. Returns True if a row was deleted."""
+    if not _db_available:
+        return False
     conn = _db_connection()
     try:
         cur = conn.execute(
@@ -248,6 +286,8 @@ def _db_delete_one_to_one_by_report_and_date(direct_report_id: int, date_str: st
 
 def _db_purge_one_to_one_for_report(direct_report_id: int) -> int:
     """Delete all 1:1 summaries for a direct report. Returns number of rows deleted."""
+    if not _db_available:
+        return 0
     conn = _db_connection()
     try:
         cur = conn.execute("DELETE FROM one_to_one_summaries WHERE direct_report_id = ?", (direct_report_id,))
@@ -258,7 +298,7 @@ def _db_purge_one_to_one_for_report(direct_report_id: int) -> int:
 
 
 # ============================================================================
-# CONFIGURATION & UTILITY FUNCTIONS
+# UTILITIES — config, I/O, menu building
 # ============================================================================
 
 def _get_expected_password() -> str:
@@ -314,10 +354,6 @@ def _wrap_text(text: str, width: int) -> list[str]:
             lines.append(" ".join(current))
     return lines
 
-
-# ============================================================================
-# MENU & UI FUNCTIONS
-# ============================================================================
 
 def _menu_box(
     title: str,
@@ -409,7 +445,7 @@ def _run_submenu(
 
 
 # ============================================================================
-# DIRECT REPORTS: Data Management
+# DIRECT REPORTS — model helpers, load/save, list/add/delete/generate/purge
 # ============================================================================
 
 def _next_direct_report_id() -> int:
@@ -779,7 +815,7 @@ def _purge_direct_reports() -> None | bool:
 
 
 # ============================================================================
-# MANAGEMENT TIPS: Data Management
+# MANAGEMENT TIPS — load/save, daily Mistral tip, view by date
 # ============================================================================
 
 def _load_management_tips() -> None:
@@ -943,7 +979,7 @@ def _print_management_tips_by_date() -> None:
 
 
 # ============================================================================
-# MILESTONE REMINDERS
+# MILESTONE REMINDERS — birthdays & anniversaries (from file and DB)
 # ============================================================================
 
 def _compute_milestones_from_reports(reports: list[dict[str, Any]], range_days: int) -> list[tuple[int, str]]:
@@ -1027,7 +1063,7 @@ def _view_milestone_reminders() -> None | bool:
 
 
 # ============================================================================
-# 1:1 RECORDINGS: Upload, View, Delete, Purge (Chunk #4)
+# 1:1 RECORDINGS — upload (Mistral transcribe + summarize), view/delete/purge by report
 # ============================================================================
 
 def _prompt_direct_report_id() -> int | None:
@@ -1127,7 +1163,7 @@ Format the response clearly with headings (Summary, Action Items, Follow-ups). U
 def _view_one_to_one_responses() -> None:
     """View 1:1 summaries for a direct report, sorted by date."""
     _clear_screen()
-    print("\n--- View 1:1 Responses by Direct Report ---\n")
+    print("\n--- View 1:1 Summaries by Direct Report ---\n")
     report_id = _prompt_direct_report_id()
     if report_id is None:
         return
@@ -1144,9 +1180,9 @@ def _view_one_to_one_responses() -> None:
 
 
 def _delete_one_to_one_response() -> None:
-    """Delete a specific 1:1 response for a direct report by date."""
+    """Delete a specific 1:1 summary for a direct report by date."""
     _clear_screen()
-    print("\n--- Delete 1:1 Response ---\n")
+    print("\n--- Delete 1:1 Summary ---\n")
     report_id = _prompt_direct_report_id()
     if report_id is None:
         return
@@ -1161,28 +1197,29 @@ def _delete_one_to_one_response() -> None:
     if not date_str:
         return
     if _db_delete_one_to_one_by_report_and_date(report_id, date_str):
-        print(f"Deleted 1:1 response for {date_str}.")
+        print(f"Deleted 1:1 summary for {date_str}.")
     else:
-        print(f"No response found for date {date_str}.")
+        print(f"No summary found for date {date_str}.")
 
 
 def _purge_one_to_one_responses() -> None:
-    """Purge all 1:1 responses for a direct report."""
+    """Purge all 1:1 summaries for a direct report."""
     _clear_screen()
-    print("\n--- Purge All 1:1 Responses for a Direct Report ---\n")
+    print("\n--- Purge All 1:1 Summaries for a Direct Report ---\n")
     report_id = _prompt_direct_report_id()
     if report_id is None:
         return
     n = _db_purge_one_to_one_for_report(report_id)
     if n > 0:
-        print(f"Purged {n} 1:1 response(s) for direct report ID {report_id}.")
+        print(f"Purged {n} 1:1 summary/summaries for direct report ID {report_id}.")
     else:
-        print(f"No 1:1 responses found for direct report ID {report_id}.")
+        print(f"No 1:1 summaries found for direct report ID {report_id}.")
 
 
 # ============================================================================
-# MENUS: Main Menu
+# MENUS — main, developer, project, people & 1:1, direct reports
 # ============================================================================
+# --- Main menu ---
 
 def _build_main_menu() -> str:
     """Build the main menu with the latest management tip."""
@@ -1200,14 +1237,25 @@ def _build_main_menu() -> str:
             "",
             (
                 "Instructions For Dr. Riskas:",
-                " You can navigate to either 'Administer Direct Reports' or 'View Management Tips by Date'"
-                "(select red options) to see file operations in action. There are two files direct_reports.json"
-                " and management_tips.json that store the data for the direct reports and management tips respectively. "
-                "Management tips are generated by Mistral AI daily and are stored in the management_tips.json file. "
-                "When a direct report is added or deleted, the data is persisted to direct_reports.json. "  
-                "Both files are read back in when the program starts up for persistence. If one or both files are missing, "
-                "the program will function as normal."
-                ,
+                " You can navigate to either 'Administer Direct Reports' or "
+                "'View Management Tips by Date' (select red options) to see "
+                "file operations in action. There are two files "
+                "direct_reports.json and management_tips.json that store the "
+                "data for the direct reports and management tips respectively. "
+                "Management tips are generated by Mistral AI daily and are "
+                "stored in the management_tips.json file. When a direct "
+                "report is added or deleted, the data is persisted to "
+                "direct_reports.json. Both files are read back in when the "
+                "program starts up for persistence. If one or both files are "
+                "missing, the program will function as normal. I have also "
+                "implemented a SQLite database to store the data for the "
+                "direct reports and management tips in addition to the files "
+                "since I felt this would be the next logical step. The "
+                "database is stored in the wingmanem.db file. When listing "
+                "direct reports or management tips the results should be "
+                "shown from both the file and database separately for comparison. 1:1 "
+                "summaries are also stored in the database but are not stored "
+                "in the files. There is a sample 1:1 summary in the database for direct report ID 2 on 2026-02-16."
             ),
             "",
         ],
@@ -1240,9 +1288,7 @@ def run_main_menu() -> bool:
     return True
 
 
-# ============================================================================
-# MENUS: Developer Menu
-# ============================================================================
+# --- Developer menu ---
 
 DEVELOPER_MENU = _menu_box(
     "Developer menu",
@@ -1262,9 +1308,7 @@ def run_developer_menu() -> bool:
     return True
 
 
-# ============================================================================
-# MENUS: Project Creation & Estimation
-# ============================================================================
+# --- Project Creation & Estimation ---
 
 PROJECT_MENU = _menu_box(
     "           Project Creation & Estimation",
@@ -1290,17 +1334,15 @@ def run_project_estimation_menu() -> None:
     )
 
 
-# ============================================================================
-# MENUS: People Management & Coaching
-# ============================================================================
+# --- People Management & Coaching (includes 1:1 submenu) ---
 
 ONE_TO_ONE_MENU = _menu_box(
     "           1:1 Recordings (Upload, View, Delete)",
     [
-        ("  1. Upload 1:1 recording (summarize & action items)", True),
-        ("  2. View 1:1 responses by direct report", True),
-        ("  3. Delete a 1:1 response by date", True),
-        ("  4. Purge all 1:1 responses for a direct report", True),
+        ("  1. Summarize 1:1 recording", True),
+        ("  2. View 1:1 summaries by direct report", True),
+        ("  3. Delete a 1:1 summary by date", True),
+        ("  4. Purge all 1:1 summaries for a direct report", True),
         ("  5. Back to previous menu", True),
     ],
 )
@@ -1324,7 +1366,7 @@ def run_one_to_one_menu() -> bool:
 PEOPLE_MENU = _menu_box(
     "           People Management & Coaching",
     [
-        ("  1. Upload 1:1 recording (summarize & action items)", True),
+        ("  1. Manage 1:1s", True),
         ("  2. View 1:1 trends analysis", False),
         ("  3. Get suggested follow-up topics", False),
         ("  4. View milestone reminders (anniversaries, birthdays)", True, True),  # red
@@ -1351,9 +1393,7 @@ def run_people_coaching_menu() -> None:
     )
 
 
-# ============================================================================
-# MENUS: Administer Direct Reports
-# ============================================================================
+# --- Administer Direct Reports ---
 
 DIRECT_REPORTS_MENU = _menu_box(
     "Administer Direct Reports",
@@ -1388,7 +1428,7 @@ def run_direct_reports_menu() -> bool:
 
 
 # ============================================================================
-# AUTHENTICATION
+# AUTHENTICATION (optional; currently bypassed in main)
 # ============================================================================
 
 def authenticate() -> bool:

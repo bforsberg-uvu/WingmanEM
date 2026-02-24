@@ -127,4 +127,3 @@ Update the all the app functionality that manipulates the data in the the direct
 When listing direct reports or management tips the user the results should be shown from both the file and database seperately.
 The app should function the same as they have before this change with the addition of having the data housed in the database.
 
-### 7
