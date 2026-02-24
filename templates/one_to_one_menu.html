@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% block title %}1:1 Recordings — WingmanEM{% endblock %}
+
+{% block breadcrumb %}
+  <div class="breadcrumb"><a href="{{ url_for('index') }}">Main</a> → <a href="{{ url_for('people_menu') }}">People</a> → 1:1 Recordings</div>
+{% endblock %}
+
+{% block content %}
+  <h2 style="margin-bottom: 1rem;">1:1 Recordings (Upload, View, Delete)</h2>
+  <div class="menu-grid">
+    <div class="card">
+      <a href="{{ url_for('one_to_one_upload') }}">
+        <h2>Summarize 1:1 recording</h2>
+        <p>Upload audio; transcribe and summarize with Mistral AI.</p>
+      </a>
+    </div>
+    <div class="card">
+      <h2>View 1:1 summaries by direct report</h2>
+      <p>Select a direct report below to view, delete by date, or purge all summaries.</p>
+    </div>
+  </div>
+
+  <div class="section-title">Select direct report</div>
+  {% if not reports %}
+  <p class="text-muted">No direct reports. Add one from Administer Direct Reports first.</p>
+  {% else %}
+  <ul style="list-style: none; padding: 0;">
+    {% for r in reports %}
+    <li style="margin-bottom: 0.5rem;">
+      <a href="{{ url_for('one_to_one_view', report_id=r.get('id')) }}">ID {{ r.get('id') }}: {{ r.get('first_name') }} {{ r.get('last_name') }}</a>
+      · <a href="{{ url_for('one_to_one_delete', report_id=r.get('id')) }}">Delete by date</a>
+      · <a href="{{ url_for('one_to_one_purge', report_id=r.get('id')) }}">Purge all</a>
+    </li>
+    {% endfor %}
+  </ul>
+  {% endif %}
+
+  <p style="margin-top: 1rem;"><a href="{{ url_for('people_menu') }}" class="btn">← Back to People</a></p>
+{% endblock %}

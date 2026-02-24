@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}WingmanEM{% endblock %}</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,600;0,9..40,700;1,9..40,400&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+  <div class="loading-overlay" id="loadingOverlay" aria-hidden="true">
+    <div class="loading-spinner" aria-hidden="true"></div>
+    <p class="loading-text">Loading…</p>
+  </div>
+
+  <div class="container page-enter">
+    <header class="app-header">
+      <h1>WingmanEM</h1>
+      <p class="sub">Engineering Manager</p>
+    </header>
+    {% block breadcrumb %}{% endblock %}
+    {% block content %}{% endblock %}
+  </div>
+
+  <script>
+    (function() {
+      var overlay = document.getElementById('loadingOverlay');
+      function showLoading() { overlay.classList.add('active'); }
+      function hideLoading() { overlay.classList.remove('active'); }
+      document.querySelectorAll('form').forEach(function(f) {
+        f.addEventListener('submit', showLoading);
+      });
+      document.querySelectorAll('a[href^="/"]').forEach(function(a) {
+        if (a.getAttribute('href') !== '#' && !a.target) {
+          a.addEventListener('click', function(e) {
+            if (!e.ctrlKey && !e.metaKey) showLoading();
+          });
+        }
+      });
+      window.addEventListener('pageshow', hideLoading);
+      window.addEventListener('load', hideLoading);
+    })();
+  </script>
+  {% block scripts %}{% endblock %}
+</body>
+</html>

@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% block title %}Purge 1:1 Summaries — WingmanEM{% endblock %}
+
+{% block breadcrumb %}
+  <div class="breadcrumb"><a href="{{ url_for('index') }}">Main</a> → <a href="{{ url_for('people_menu') }}">People</a> → <a href="{{ url_for('one_to_one_menu') }}">1:1</a> → Purge</div>
+{% endblock %}
+
+{% block content %}
+  <h2 style="margin-bottom: 1rem;">Purge all 1:1 summaries — {% if report %}{{ report.get('first_name') }} {{ report.get('last_name') }}{% else %}Report ID {{ report_id }}{% endif %}</h2>
+  <p>This will remove all 1:1 summaries for this direct report.</p>
+  <form method="post" action="{{ url_for('one_to_one_purge', report_id=report_id) }}" onsubmit="return confirm('Purge all 1:1 summaries for this report?');">
+    <input type="hidden" name="report_id" value="{{ report_id }}">
+    <button type="submit" class="btn btn-danger">Purge all</button>
+    <a href="{{ url_for('one_to_one_view', report_id=report_id) }}" class="btn">Cancel</a>
+  </form>
+{% endblock %}

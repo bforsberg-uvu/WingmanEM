@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block title %}Main Menu — WingmanEM{% endblock %}
+
+{% block content %}
+  <div class="tip-box">
+    <div class="label">Daily management tip</div>
+    <div class="text">{{ tip }}</div>
+  </div>
+
+  <div class="menu-grid">
+    <div class="card">
+      <a href="{{ url_for('project_menu') }}">
+        <h2>Project Creation & Estimation</h2>
+        <p>Input project spec, sync to Jira, ask about status.</p>
+      </a>
+    </div>
+    <div class="card card-accent">
+      <a href="{{ url_for('people_menu') }}">
+        <h2>People Management & Coaching</h2>
+        <p>1:1s, direct reports, milestones, management tips.</p>
+      </a>
+    </div>
+  </div>
+
+  <div class="instructions">
+    <strong>Instructions For Dr. Riskas:</strong>
+    You can navigate to either &quot;Administer Direct Reports&quot; or &quot;View Management Tips by Date&quot; (red-highlighted options in the People menu) to see file operations in action. Data is stored in direct_reports.json and management_tips.json and synced to the SQLite database (wingmanem.db). 1:1 summaries are stored in the database only.
+  </div>
+
+  <p style="margin-top: 1.5rem;"><a href="{{ url_for('developer_menu') }}">Developer menu</a></p>
+{% endblock %}

@@ -1,0 +1,78 @@
+{% extends "base.html" %}
+{% block title %}Direct Reports — WingmanEM{% endblock %}
+
+{% block breadcrumb %}
+  <div class="breadcrumb"><a href="{{ url_for('index') }}">Main</a> → <a href="{{ url_for('people_menu') }}">People</a> → Direct Reports</div>
+{% endblock %}
+
+{% block content %}
+  <h2 style="margin-bottom: 1rem;">Administer Direct Reports</h2>
+
+  <div class="form-actions" style="margin-bottom: 1.5rem;">
+    <a href="{{ url_for('direct_report_add') }}" class="btn btn-primary">Add direct report</a>
+    {% if show_generate %}
+    <form method="post" action="{{ url_for('direct_reports_generate') }}" style="display: inline-block;">
+      <input type="hidden" name="num" value="3">
+      <button type="submit" class="btn">Generate with Mistral AI (3)</button>
+    </form>
+    {% endif %}
+    <form method="post" action="{{ url_for('direct_reports_purge') }}" style="display: inline-block;" onsubmit="return confirm('Purge all direct reports?');">
+      <button type="submit" class="btn btn-danger">Purge all</button>
+    </form>
+  </div>
+
+  <div class="section-title">From file (direct_reports.json)</div>
+  {% if not file_reports %}
+  <p class="text-muted">No direct reports yet.</p>
+  {% else %}
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          {% for _key, header, _w in columns %}<th>{{ header }}</th>{% endfor %}
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in file_reports %}
+        <tr>
+          {% for key, _header, _w in columns %}<td>{{ r.get(key) or '' }}</td>{% endfor %}
+          <td>
+            <form method="post" action="{{ url_for('direct_report_delete') }}" style="display: inline;">
+              <input type="hidden" name="id" value="{{ r.get('id') }}">
+              <button type="submit" class="btn btn-danger" style="padding: 0.25rem 0.5rem; font-size: 0.8rem;">Delete</button>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <p>Total: {{ file_reports|length }}</p>
+  {% endif %}
+
+  <div class="section-title">From database</div>
+  {% if not db_reports %}
+  <p class="text-muted">No direct reports in database.</p>
+  {% else %}
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          {% for _key, header, _w in columns %}<th>{{ header }}</th>{% endfor %}
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in db_reports %}
+        <tr>
+          {% for key, _header, _w in columns %}<td>{{ r.get(key) or '' }}</td>{% endfor %}
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <p>Total: {{ db_reports|length }}</p>
+  {% endif %}
+
+  <p style="margin-top: 1rem;"><a href="{{ url_for('people_menu') }}" class="btn">← Back to People</a></p>
+{% endblock %}

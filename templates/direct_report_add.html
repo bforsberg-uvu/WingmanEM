@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% block title %}Add Direct Report — WingmanEM{% endblock %}
+
+{% block breadcrumb %}
+  <div class="breadcrumb"><a href="{{ url_for('index') }}">Main</a> → <a href="{{ url_for('people_menu') }}">People</a> → <a href="{{ url_for('direct_reports_list') }}">Direct Reports</a> → Add</div>
+{% endblock %}
+
+{% block content %}
+  <h2 style="margin-bottom: 1rem;">Add Direct Report</h2>
+  <form method="post" action="{{ url_for('direct_report_add') }}">
+    <label>First name (required)</label>
+    <input type="text" name="first_name" required>
+    <label>Last name (required)</label>
+    <input type="text" name="last_name" required>
+    <label>Street address 1</label>
+    <input type="text" name="street_address_1">
+    <label>Street address 2</label>
+    <input type="text" name="street_address_2">
+    <label>City</label>
+    <input type="text" name="city">
+    <label>State</label>
+    <input type="text" name="state">
+    <label>Zipcode</label>
+    <input type="text" name="zipcode">
+    <label>Country</label>
+    <input type="text" name="country">
+    <label>Birthday (YYYY-MM-DD)</label>
+    <input type="date" name="birthday">
+    <label>Hire date (YYYY-MM-DD)</label>
+    <input type="date" name="hire_date">
+    <label>Current role</label>
+    <input type="text" name="current_role">
+    <label>Role start date (YYYY-MM-DD)</label>
+    <input type="date" name="role_start_date">
+    <label>Partner name</label>
+    <input type="text" name="partner_name">
+    <div class="form-actions">
+      <button type="submit" class="btn btn-primary">Save</button>
+      <a href="{{ url_for('direct_reports_list') }}" class="btn">Cancel</a>
+    </div>
+  </form>
+{% endblock %}

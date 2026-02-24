@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% block title %}Management Tips — WingmanEM{% endblock %}
+
+{% block breadcrumb %}
+  <div class="breadcrumb"><a href="{{ url_for('index') }}">Main</a> → <a href="{{ url_for('people_menu') }}">People</a> → Management tips by date</div>
+{% endblock %}
+
+{% block content %}
+  <h2 style="margin-bottom: 1rem;">Management Tips by Date</h2>
+
+  <div class="section-title">From file (management_tips.json)</div>
+  {% if not file_tips %}
+  <p class="text-muted">No tips yet.</p>
+  {% else %}
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Date</th><th>Tip</th></tr></thead>
+      <tbody>
+        {% for e in file_tips %}
+        <tr><td>{{ e.date }}</td><td>{{ e.text }}</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+
+  <div class="section-title">From database</div>
+  {% if not db_tips %}
+  <p class="text-muted">No tips in database.</p>
+  {% else %}
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Date</th><th>Tip</th></tr></thead>
+      <tbody>
+        {% for e in db_tips %}
+        <tr><td>{{ e.date }}</td><td>{{ e.text }}</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+
+  <p style="margin-top: 1rem;"><a href="{{ url_for('people_menu') }}" class="btn">← Back to People</a></p>
+{% endblock %}

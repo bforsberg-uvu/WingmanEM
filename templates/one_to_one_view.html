@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block title %}1:1 Summaries — WingmanEM{% endblock %}
+
+{% block breadcrumb %}
+  <div class="breadcrumb"><a href="{{ url_for('index') }}">Main</a> → <a href="{{ url_for('people_menu') }}">People</a> → <a href="{{ url_for('one_to_one_menu') }}">1:1</a> → View (ID {{ report_id }})</div>
+{% endblock %}
+
+{% block content %}
+  <h2 style="margin-bottom: 1rem;">1:1 Summaries — {% if report %}{{ report.get('first_name') }} {{ report.get('last_name') }}{% else %}Report ID {{ report_id }}{% endif %}</h2>
+  {% if not summaries %}
+  <p class="text-muted">No 1:1 summaries for this direct report.</p>
+  {% else %}
+  {% for s in summaries %}
+  <div class="card" style="margin-bottom: 1rem;">
+    <div class="section-title">{{ s.date }}</div>
+    <pre style="white-space: pre-wrap; font-family: inherit; margin: 0; font-size: 0.9rem;">{{ s.response_text }}</pre>
+  </div>
+  {% endfor %}
+  {% endif %}
+  <p style="margin-top: 1rem;">
+    <a href="{{ url_for('one_to_one_delete', report_id=report_id) }}" class="btn btn-danger">Delete by date</a>
+    <a href="{{ url_for('one_to_one_purge', report_id=report_id) }}" class="btn btn-danger">Purge all for this report</a>
+    <a href="{{ url_for('one_to_one_menu') }}" class="btn">← Back to 1:1 menu</a>
+  </p>
+{% endblock %}

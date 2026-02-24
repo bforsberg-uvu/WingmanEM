@@ -127,3 +127,13 @@ Update the all the app functionality that manipulates the data in the the direct
 When listing direct reports or management tips the user the results should be shown from both the file and database seperately.
 The app should function the same as they have before this change with the addition of having the data housed in the database.
 
+### Chunk #4:
+To implement this chunk we want to convert this CLI app to a Flask Web app with the following criteria:
+
+Import flask library and configure the app.
+Define a single functional route that take the user to the main menu
+Convert the existing menus and functionality to work in flask.
+Use professional colors in the app and user color consistently throughout the app.
+Indicate the app is doing something by displaying a fun animation.
+Create a web_app.py file that is the root of the app.
+Run the flask server and start the app when the web_app.py script is executed

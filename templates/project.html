@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block title %}Project — WingmanEM{% endblock %}
+
+{% block breadcrumb %}
+  <div class="breadcrumb"><a href="{{ url_for('index') }}">Main</a> → Project</div>
+{% endblock %}
+
+{% block content %}
+  <h2 style="margin-bottom: 1rem;">Project Creation & Estimation</h2>
+  <div class="menu-grid">
+    <div class="card">
+      <h3>Input project spec</h3>
+      <p>Get structured breakdown (placeholder).</p>
+    </div>
+    <div class="card">
+      <h3>Sync breakdown to Jira</h3>
+      <p>Not yet implemented.</p>
+    </div>
+    <div class="card">
+      <h3>Ask about project status</h3>
+      <p>Natural language (placeholder).</p>
+    </div>
+  </div>
+  <p style="margin-top: 1rem;"><a href="{{ url_for('index') }}" class="btn">← Back to main menu</a></p>
+{% endblock %}

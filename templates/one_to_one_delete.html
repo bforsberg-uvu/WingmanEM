@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% block title %}Delete 1:1 Summary — WingmanEM{% endblock %}
+
+{% block breadcrumb %}
+  <div class="breadcrumb"><a href="{{ url_for('index') }}">Main</a> → <a href="{{ url_for('people_menu') }}">People</a> → <a href="{{ url_for('one_to_one_menu') }}">1:1</a> → Delete</div>
+{% endblock %}
+
+{% block content %}
+  <h2 style="margin-bottom: 1rem;">Delete 1:1 Summary — {% if report %}{{ report.get('first_name') }} {{ report.get('last_name') }}{% else %}Report ID {{ report_id }}{% endif %}</h2>
+  {% if not summaries %}
+  <p class="text-muted">No summaries to delete.</p>
+  <p><a href="{{ url_for('one_to_one_menu') }}" class="btn">← Back</a></p>
+  {% else %}
+  <form method="post" action="{{ url_for('one_to_one_delete', report_id=report_id) }}">
+    <input type="hidden" name="report_id" value="{{ report_id }}">
+    <label>Date to delete (YYYY-MM-DD)</label>
+    <select name="date" required>
+      <option value="">— Select —</option>
+      {% for s in summaries %}<option value="{{ s.date }}">{{ s.date }}</option>{% endfor %}
+    </select>
+    <div class="form-actions">
+      <button type="submit" class="btn btn-danger">Delete</button>
+      <a href="{{ url_for('one_to_one_view', report_id=report_id) }}" class="btn">Cancel</a>
+    </div>
+  </form>
+  {% endif %}
+{% endblock %}
