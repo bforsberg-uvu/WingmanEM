@@ -8,6 +8,11 @@
 {% block content %}
   <h2 style="margin-bottom: 1rem;">Summarize 1:1 Recording</h2>
   <p style="color: var(--text-muted); margin-bottom: 1rem;">Upload an audio file; we'll transcribe and summarize it with Mistral AI and store the summary for the selected direct report.</p>
+  {% if upload_error == 'ssl' %}
+  <p class="upload-error" style="color: var(--accent-red); margin-bottom: 1rem;">The connection to Mistral AI failed (SSL error). Try again, or check your network, VPN, or firewall. If the problem continues, try a different network.</p>
+  {% elif upload_error == 'connection' %}
+  <p class="upload-error" style="color: var(--accent-red); margin-bottom: 1rem;">Could not reach Mistral AI. Check your network connection and try again.</p>
+  {% endif %}
   {% if not reports %}
   <p class="text-muted">No direct reports. Add one from Administer Direct Reports first.</p>
   <p><a href="{{ url_for('one_to_one_menu') }}" class="btn">← Back</a></p>

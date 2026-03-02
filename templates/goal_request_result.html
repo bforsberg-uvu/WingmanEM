@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block title %}{% if request_type == 'update' %}Goal Updated{% else %}Goal Deleted{% endif %} — WingmanEM{% endblock %}
+
+{% block breadcrumb %}
+  <div class="breadcrumb"><a href="{{ url_for('index') }}">Main</a> → <a href="{{ url_for('people_menu') }}">People</a> → <a href="{{ url_for('goals_admin') }}">Goals</a> → {% if request_type == 'update' %}Updated{% else %}Deleted{% endif %}</div>
+{% endblock %}
+
+{% block content %}
+  <h2 style="margin-bottom: 1rem;">{% if request_type == 'update' %}Goal Updated{% else %}Goal Deleted{% endif %}</h2>
+
+  <div class="section-title">{% if request_type == 'update' %}UPDATE (PUT){% else %}DELETE{% endif %} request</div>
+  <pre class="code-block">{{ raw_http }}</pre>
+
+  <p style="margin-top: 1rem;">
+    <a href="{{ url_for('goal_view_report', report_id=report_id) }}" class="btn">← Back to this report's goals</a>
+    <a href="{{ url_for('goals_admin') }}" class="btn">Goal administration menu</a>
+  </p>
+{% endblock %}

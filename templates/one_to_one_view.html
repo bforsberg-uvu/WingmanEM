@@ -11,7 +11,7 @@
   <p class="text-muted">No 1:1 summaries for this direct report.</p>
   {% else %}
   {% for s in summaries %}
-  <div class="card" style="margin-bottom: 1rem;">
+  <div class="summary-block">
     <div class="section-title">{{ s.date }}</div>
     <pre style="white-space: pre-wrap; font-family: inherit; margin: 0; font-size: 0.9rem;">{{ s.response_text }}</pre>
   </div>

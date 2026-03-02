@@ -52,6 +52,7 @@ management_tips: list[dict[str, str]] = []
 # Persistence files
 DIRECT_REPORTS_FILE = "direct_reports.json"
 MANAGEMENT_TIPS_FILE = "management_tips.json"
+DIRECT_REPORT_GOALS_FILE = "direct_report_goals.json"
 DATABASE_PATH = "wingmanem.db"
 
 # ANSI colors for menu items
@@ -111,6 +112,15 @@ def _db_init() -> None:
                     direct_report_id INTEGER NOT NULL,
                     date TEXT NOT NULL,
                     response_text TEXT NOT NULL
+                )
+            """)
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS direct_report_goals (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    direct_report_id INTEGER NOT NULL,
+                    goal_title TEXT,
+                    goal_description TEXT,
+                    goal_completion_date TEXT
                 )
             """)
             conn.commit()
@@ -235,6 +245,13 @@ def _db_populate_from_json_files() -> None:
                 _db_sync_management_tips_from_list(tips)
         except (json.JSONDecodeError, OSError):
             pass
+    if os.path.isfile(DIRECT_REPORT_GOALS_FILE):
+        try:
+            goals = _load_direct_report_goals()
+            if goals:
+                _db_sync_goals_from_list(goals)
+        except (json.JSONDecodeError, OSError):
+            pass
 
 
 def _db_insert_one_to_one_summary(direct_report_id: int, date_str: str, response_text: str) -> None:
@@ -295,6 +312,322 @@ def _db_purge_one_to_one_for_report(direct_report_id: int) -> int:
         return cur.rowcount
     finally:
         conn.close()
+
+
+# ----- Direct report goals (Chunk #5) -----
+
+def _db_insert_goal(direct_report_id: int, goal_title: str, goal_description: str, goal_completion_date: str | None) -> int:
+    """Insert a goal; returns the new row id."""
+    if not _db_available:
+        return 0
+    conn = _db_connection()
+    try:
+        cur = conn.execute(
+            """INSERT INTO direct_report_goals (direct_report_id, goal_title, goal_description, goal_completion_date)
+               VALUES (?, ?, ?, ?)""",
+            (direct_report_id, goal_title or "", goal_description or "", goal_completion_date or ""),
+        )
+        conn.commit()
+        return cur.lastrowid or 0
+    finally:
+        conn.close()
+
+
+def _db_load_all_goals() -> list[dict[str, Any]]:
+    """Load all goals from the database."""
+    if not _db_available:
+        return []
+    conn = _db_connection()
+    try:
+        cur = conn.execute(
+            "SELECT id, direct_report_id, goal_title, goal_description, goal_completion_date FROM direct_report_goals ORDER BY direct_report_id, id"
+        )
+        return [
+            {"id": r[0], "direct_report_id": r[1], "goal_title": r[2], "goal_description": r[3], "goal_completion_date": r[4]}
+            for r in cur.fetchall()
+        ]
+    finally:
+        conn.close()
+
+
+def _db_load_goals_for_report(direct_report_id: int) -> list[dict[str, Any]]:
+    """Load goals for a specific direct report."""
+    if not _db_available:
+        return []
+    conn = _db_connection()
+    try:
+        cur = conn.execute(
+            "SELECT id, direct_report_id, goal_title, goal_description, goal_completion_date FROM direct_report_goals WHERE direct_report_id = ? ORDER BY id",
+            (direct_report_id,),
+        )
+        return [
+            {"id": r[0], "direct_report_id": r[1], "goal_title": r[2], "goal_description": r[3], "goal_completion_date": r[4]}
+            for r in cur.fetchall()
+        ]
+    finally:
+        conn.close()
+
+
+def _db_delete_goals_for_report(direct_report_id: int) -> int:
+    """Delete all goals for a direct report. Returns number deleted."""
+    if not _db_available:
+        return 0
+    conn = _db_connection()
+    try:
+        cur = conn.execute("DELETE FROM direct_report_goals WHERE direct_report_id = ?", (direct_report_id,))
+        conn.commit()
+        return cur.rowcount
+    finally:
+        conn.close()
+
+
+def _db_delete_goal_by_id(goal_id: int) -> bool:
+    """Delete a goal by id. Returns True if deleted."""
+    if not _db_available:
+        return False
+    conn = _db_connection()
+    try:
+        cur = conn.execute("DELETE FROM direct_report_goals WHERE id = ?", (goal_id,))
+        conn.commit()
+        return cur.rowcount > 0
+    finally:
+        conn.close()
+
+
+def _db_sync_goals_from_list(goals: list[dict[str, Any]]) -> None:
+    """Replace direct_report_goals table with the given list."""
+    if not _db_available:
+        return
+    conn = _db_connection()
+    try:
+        conn.execute("DELETE FROM direct_report_goals")
+        for g in goals:
+            conn.execute(
+                """INSERT INTO direct_report_goals (id, direct_report_id, goal_title, goal_description, goal_completion_date)
+                   VALUES (?, ?, ?, ?, ?)""",
+                (
+                    g.get("id"),
+                    g.get("direct_report_id"),
+                    g.get("goal_title") or "",
+                    g.get("goal_description") or "",
+                    g.get("goal_completion_date") or "",
+                ),
+            )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def _load_direct_report_goals() -> list[dict[str, Any]]:
+    """Load goals from JSON file. Creates file with [] if missing."""
+    if not os.path.isfile(DIRECT_REPORT_GOALS_FILE):
+        goals: list[dict[str, Any]] = []
+        _save_direct_report_goals(goals)
+        return goals
+    try:
+        with open(DIRECT_REPORT_GOALS_FILE, encoding="utf-8") as f:
+            data = json.load(f)
+        raw = data if isinstance(data, list) else []
+        goals = []
+        for g in raw:
+            if isinstance(g, dict) and g.get("direct_report_id") is not None:
+                goals.append({
+                    "id": g.get("id"),
+                    "direct_report_id": int(g["direct_report_id"]),
+                    "goal_title": str(g.get("goal_title") or "")[:50],
+                    "goal_description": str(g.get("goal_description") or "")[:100],
+                    "goal_completion_date": str(g.get("goal_completion_date") or "")[:10],
+                })
+        return goals
+    except (json.JSONDecodeError, OSError):
+        return []
+
+
+def _save_direct_report_goals(goals: list[dict[str, Any]]) -> None:
+    """Save goals to JSON file and sync to DB."""
+    try:
+        with open(DIRECT_REPORT_GOALS_FILE, "w", encoding="utf-8") as f:
+            json.dump(goals, f, indent=2)
+        _db_sync_goals_from_list(goals)
+    except OSError as e:
+        print(f"Could not save goals: {e}", file=sys.stderr)
+
+
+def _next_goal_id(goals: list[dict[str, Any]]) -> int:
+    """Return next available goal id."""
+    max_id = 0
+    for g in goals:
+        try:
+            max_id = max(max_id, int(g.get("id") or 0))
+        except (TypeError, ValueError):
+            pass
+    return max_id + 1
+
+
+def _get_goal_by_id(goal_id: int) -> dict[str, Any] | None:
+    """Return a goal dict by id, or None if not found."""
+    goals = _load_direct_report_goals()
+    for g in goals:
+        if g.get("id") == goal_id:
+            return dict(g)
+    return None
+
+
+def _update_goal_by_id(
+    goal_id: int,
+    goal_title: str,
+    goal_description: str,
+    goal_completion_date: str | None,
+) -> bool:
+    """Update a goal by id in JSON and DB. Returns True if updated."""
+    goals = _load_direct_report_goals()
+    for g in goals:
+        if g.get("id") == goal_id:
+            g["goal_title"] = (goal_title or "")[:50]
+            g["goal_description"] = (goal_description or "")[:100]
+            g["goal_completion_date"] = (goal_completion_date or "")[:10]
+            _save_direct_report_goals(goals)
+            return True
+    return False
+
+
+def _delete_goal_by_id(goal_id: int) -> bool:
+    """Delete a goal by id from both JSON file and database. Returns True if deleted."""
+    goals = _load_direct_report_goals()
+    before = len(goals)
+    goals = [g for g in goals if g.get("id") != goal_id]
+    if len(goals) == before:
+        return False
+    _save_direct_report_goals(goals)
+    return True
+
+
+def _delete_goals_for_direct_report(direct_report_id: int) -> None:
+    """Delete all goals for a direct report from both JSON file and database (cascade delete)."""
+    goals = _load_direct_report_goals()
+    goals = [g for g in goals if int(g.get("direct_report_id") or 0) != direct_report_id]
+    _save_direct_report_goals(goals)
+    _db_delete_goals_for_report(direct_report_id)
+
+
+def _delete_all_goals() -> None:
+    """Delete all goals (when purging all direct reports)."""
+    _save_direct_report_goals([])
+    if _db_available:
+        conn = _db_connection()
+        try:
+            conn.execute("DELETE FROM direct_report_goals")
+            conn.commit()
+        finally:
+            conn.close()
+
+
+def _generate_goals_with_ai(num: int) -> int:
+    """Generate goals for direct reports using Mistral AI. Returns count of goals added."""
+    if not MISTRAL_AVAILABLE:
+        return 0
+    api_key = _get_mistral_api_key()
+    if not api_key:
+        return 0
+    if not direct_reports:
+        return 0
+    num = max(1, min(20, num))
+    report_list = [
+        {"id": r.get("id"), "first_name": r.get("first_name", ""), "last_name": r.get("last_name", "")}
+        for r in direct_reports[:50]
+        if r.get("id")
+    ]
+    if not report_list:
+        return 0
+    ids_str = ", ".join(str(r["id"]) for r in report_list)
+    names_str = ", ".join(f"{r['first_name']} {r['last_name']} (id {r['id']})" for r in report_list)
+    prompt = f"""Generate exactly {num} realistic professional development goals for engineering direct reports.
+
+Available direct reports (use only these IDs): {names_str}
+Valid direct_report_id values: {ids_str}
+
+Return a single JSON object with key "goals" whose value is an array of {num} objects. Each object must have:
+- direct_report_id (integer, must be one of {ids_str})
+- goal_title (string, max 50 chars, e.g. "Complete AWS certification")
+- goal_description (string, max 100 chars)
+- goal_completion_date (string YYYY-MM-DD, or empty string for optional)
+
+Distribute goals across different direct reports. Example:
+{{"goals": [{{"direct_report_id": 1, "goal_title": "Complete AWS certification", "goal_description": "Pass AWS Solutions Architect exam by Q2", "goal_completion_date": "2025-06-30"}}, ...]}}
+
+Output only this JSON object, no other text."""
+
+    try:
+        client = Mistral(api_key=api_key)
+        valid_ids = {r["id"] for r in report_list}
+        try:
+            message = client.chat.complete(
+                model="mistral-large-latest",
+                messages=[{"role": "user", "content": prompt}],
+                response_format={"type": "json_object"},
+            )
+        except TypeError:
+            message = client.chat.complete(
+                model="mistral-large-latest",
+                messages=[{"role": "user", "content": prompt}],
+            )
+        raw = message.choices[0].message.content
+        if isinstance(raw, list):
+            raw = "".join(
+                p.get("text", p.get("content", "")) if isinstance(p, dict) else str(p)
+                for p in raw
+            )
+        else:
+            raw = raw or ""
+        response_text = raw.strip()
+        if response_text.startswith("```"):
+            end = response_text.find("\n", 3)
+            if end != -1:
+                response_text = response_text[end + 1 :].rstrip()
+            if response_text.endswith("```"):
+                response_text = response_text[:-3].rstrip()
+
+        objects: list[dict] = []
+        try:
+            parsed = json.loads(response_text)
+            if isinstance(parsed, dict):
+                arr = parsed.get("goals") or parsed.get("goals_list")
+                if isinstance(arr, list):
+                    objects = [x for x in arr if isinstance(x, dict)]
+                if not objects:
+                    for v in parsed.values():
+                        if isinstance(v, list) and v and isinstance(v[0], dict):
+                            objects = [x for x in v if isinstance(x, dict)]
+                            break
+            elif isinstance(parsed, list):
+                objects = [x for x in parsed if isinstance(x, dict)]
+        except (json.JSONDecodeError, TypeError):
+            pass
+
+        goals = _load_direct_report_goals()
+        next_id = _next_goal_id(goals)
+        added = 0
+        for obj in objects:
+            rid = obj.get("direct_report_id")
+            if rid is None or int(rid) not in valid_ids:
+                continue
+            title = str(obj.get("goal_title") or "")[:50]
+            desc = str(obj.get("goal_description") or "")[:100]
+            comp = str(obj.get("goal_completion_date") or "")[:10]
+            goals.append({
+                "id": next_id,
+                "direct_report_id": int(rid),
+                "goal_title": title,
+                "goal_description": desc,
+                "goal_completion_date": comp,
+            })
+            next_id += 1
+            added += 1
+        if added > 0:
+            _save_direct_report_goals(goals)
+        return added
+    except Exception:
+        return 0
 
 
 # ============================================================================

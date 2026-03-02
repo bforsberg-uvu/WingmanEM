@@ -1,0 +1,66 @@
+{% extends "base.html" %}
+{% block title %}Goals for {{ report_name }} — WingmanEM{% endblock %}
+
+{% block breadcrumb %}
+  <div class="breadcrumb"><a href="{{ url_for('index') }}">Main</a> → <a href="{{ url_for('people_menu') }}">People</a> → <a href="{{ url_for('goals_admin') }}">Goals</a> → <a href="{{ url_for('goal_view') }}">View</a> → {{ report_name }}</div>
+{% endblock %}
+
+{% block content %}
+  <h2 style="margin-bottom: 1rem;">Goals — {{ report_name }}</h2>
+
+  {% if goals %}
+  <p style="margin-bottom: 1rem;">
+    <form method="post" action="{{ url_for('goal_delete_all_for_report', report_id=report_id) }}" class="js-confirm-purge" style="display: inline-block;"
+      data-confirm-title="Delete all goals"
+      data-confirm-message="Delete all goals for this direct report? This cannot be undone."
+      data-confirm-label="Delete all">
+      <button type="submit" class="btn btn-danger">Delete all goals</button>
+    </form>
+  </p>
+  {% endif %}
+
+  <div class="section-title">Goals</div>
+  {% if not goals %}
+  <p class="text-muted">No goals for this direct report.</p>
+  {% else %}
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>ID</th>
+          <th>Goal title</th>
+          <th>Goal description</th>
+          <th>Completion date</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for g in goals %}
+        <tr>
+          <td>{{ g.get('id') }}</td>
+          <td>{{ g.get('goal_title') }}</td>
+          <td>{{ g.get('goal_description') }}</td>
+          <td>{{ g.get('goal_completion_date') or '—' }}</td>
+          <td>
+            <a href="{{ url_for('goal_edit', goal_id=g.get('id')) }}" class="btn btn-small">Edit</a>
+            <form method="post" class="js-delete-goal" style="display: inline-block;" action="{{ url_for('goal_delete', goal_id=g.get('id')) }}"
+              data-confirm-title="Delete goal"
+              data-confirm-message="Delete this goal? This cannot be undone.">
+              <button type="submit" class="btn btn-small btn-danger">Delete</button>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+
+  <div class="section-title" style="margin-top: 1rem;">Raw HTTP request (best-effort reconstruction)</div>
+  <pre class="code-block">{{ get_raw_http }}</pre>
+
+  <div class="section-title">Parsed query args (request.args)</div>
+  <pre class="code-block">{{ get_request }}</pre>
+
+  <p style="margin-top: 1rem;"><a href="{{ url_for('goals_admin') }}" class="btn">← Back to goal administration menu</a></p>
+{% endblock %}

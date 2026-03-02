@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block title %}Edit Goal — WingmanEM{% endblock %}
+
+{% block breadcrumb %}
+  <div class="breadcrumb"><a href="{{ url_for('index') }}">Main</a> → <a href="{{ url_for('people_menu') }}">People</a> → <a href="{{ url_for('goals_admin') }}">Goals</a> → <a href="{{ url_for('goal_view') }}">View</a> → <a href="{{ url_for('goal_view_report', report_id=report_id) }}">{{ report_name }}</a> → Edit</div>
+{% endblock %}
+
+{% block content %}
+  <h2 style="margin-bottom: 1rem;">Edit Goal</h2>
+  <p class="text-muted" style="margin-bottom: 1rem;">Direct report: {{ report_name }}</p>
+  <form id="goal-edit-form" class="js-edit-goal-form" method="post" action="{{ url_for('goal_update', goal_id=goal_id) }}" data-method="PUT">
+    <label for="goal_title">Goal title</label>
+    <input type="text" name="goal_title" id="goal_title" maxlength="50" required value="{{ goal.get('goal_title', '') }}">
+    <label for="goal_description">Goal description</label>
+    <input type="text" name="goal_description" id="goal_description" maxlength="100" value="{{ goal.get('goal_description', '') }}">
+    <label for="goal_completion_date">Goal completion date (optional)</label>
+    <input type="date" name="goal_completion_date" id="goal_completion_date" value="{{ goal.get('goal_completion_date') or '' }}">
+    <div class="form-actions">
+      <button type="submit" class="btn btn-primary">Save</button>
+      <a href="{{ url_for('goal_view_report', report_id=report_id) }}" class="btn">Cancel</a>
+    </div>
+  </form>
+{% endblock %}

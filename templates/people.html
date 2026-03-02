@@ -22,22 +22,28 @@
       <h3>Get suggested follow-up topics</h3>
       <p>Not yet implemented.</p>
     </div>
-    <div class="card card-accent">
+    <div class="card">
       <a href="{{ url_for('milestones') }}">
         <h2>View milestone reminders</h2>
         <p>Anniversaries and birthdays.</p>
       </a>
     </div>
-    <div class="card card-accent">
+    <div class="card">
       <a href="{{ url_for('direct_reports_list') }}">
         <h2>Administer Direct Reports</h2>
         <p>Add, list, delete, generate with AI, purge.</p>
       </a>
     </div>
-    <div class="card card-accent">
+    <div class="card">
       <a href="{{ url_for('tips_list') }}">
         <h2>View management tips by date</h2>
         <p>From file and database.</p>
+      </a>
+    </div>
+    <div class="card card-accent">
+      <a href="{{ url_for('goals_admin') }}">
+        <h2>Administer Direct Report Goals</h2>
+        <p>Add and view goals.</p>
       </a>
     </div>
   </div>

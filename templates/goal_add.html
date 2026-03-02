@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% block title %}Add Goal — WingmanEM{% endblock %}
+
+{% block breadcrumb %}
+  <div class="breadcrumb"><a href="{{ url_for('index') }}">Main</a> → <a href="{{ url_for('people_menu') }}">People</a> → <a href="{{ url_for('goals_admin') }}">Goals</a> → Add</div>
+{% endblock %}
+
+{% block content %}
+  <h2 style="margin-bottom: 1rem;">Add Goal</h2>
+  <form method="post" action="{{ url_for('goal_add_post') }}">
+    <label for="direct_report_id">Direct report</label>
+    <select name="direct_report_id" id="direct_report_id" required>
+      <option value="">— Select direct report —</option>
+      {% for r in reports %}
+      <option value="{{ r.get('id') }}">{{ r.get('first_name') }} {{ r.get('last_name') }} (ID {{ r.get('id') }})</option>
+      {% endfor %}
+    </select>
+    <label for="goal_title">Goal title</label>
+    <input type="text" name="goal_title" id="goal_title" maxlength="50" required>
+    <label for="goal_description">Goal description</label>
+    <input type="text" name="goal_description" id="goal_description" maxlength="100">
+    <label for="goal_completion_date">Goal completion date (optional)</label>
+    <input type="date" name="goal_completion_date" id="goal_completion_date">
+    <div class="form-actions">
+      <button type="submit" class="btn btn-primary">Save</button>
+      <a href="{{ url_for('goals_admin') }}" class="btn">Cancel</a>
+    </div>
+  </form>
+{% endblock %}

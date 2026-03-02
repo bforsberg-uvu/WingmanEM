@@ -8,7 +8,10 @@
 {% block content %}
   <h2 style="margin-bottom: 1rem;">Purge all 1:1 summaries — {% if report %}{{ report.get('first_name') }} {{ report.get('last_name') }}{% else %}Report ID {{ report_id }}{% endif %}</h2>
   <p>This will remove all 1:1 summaries for this direct report.</p>
-  <form method="post" action="{{ url_for('one_to_one_purge', report_id=report_id) }}" onsubmit="return confirm('Purge all 1:1 summaries for this report?');">
+  <form method="post" action="{{ url_for('one_to_one_purge', report_id=report_id) }}" class="js-confirm-purge"
+      data-confirm-title="Purge 1:1 summaries"
+      data-confirm-message="Remove all 1:1 summaries for this direct report? This cannot be undone."
+      data-confirm-label="Purge all">
     <input type="hidden" name="report_id" value="{{ report_id }}">
     <button type="submit" class="btn btn-danger">Purge all</button>
     <a href="{{ url_for('one_to_one_view', report_id=report_id) }}" class="btn">Cancel</a>

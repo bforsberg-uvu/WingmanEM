@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{% block title %}Goal Successfully Added — WingmanEM{% endblock %}
+
+{% block breadcrumb %}
+  <div class="breadcrumb"><a href="{{ url_for('index') }}">Main</a> → <a href="{{ url_for('people_menu') }}">People</a> → <a href="{{ url_for('goals_admin') }}">Goals</a> → Success</div>
+{% endblock %}
+
+{% block content %}
+  <h2 style="margin-bottom: 1rem;">Goal Successfully Added</h2>
+
+  <div class="section-title">Database table contents (direct_report_goals)</div>
+  {% if not db_rows %}
+  <p class="text-muted">No rows found in the database table.</p>
+  {% else %}
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>ID</th>
+          <th>Direct report</th>
+          <th>Goal title</th>
+          <th>Goal description</th>
+          <th>Completion date</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in db_rows %}
+        <tr>
+          <td>{{ r.get('id') }}</td>
+          <td>{{ report_names.get(r.get('direct_report_id'), '—') }}</td>
+          <td>{{ r.get('goal_title') }}</td>
+          <td>{{ r.get('goal_description') }}</td>
+          <td>{{ r.get('goal_completion_date') or '—' }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+
+  <div class="section-title" style="margin-top: 1rem;">Raw HTTP request (best-effort reconstruction)</div>
+  <pre class="code-block">{{ post_raw_http }}</pre>
+
+  <div class="section-title">Parsed POST form (request.form)</div>
+  <pre class="code-block">{{ post_request }}</pre>
+
+  <div class="section-title">Dictionary (structured data)</div>
+  <pre class="code-block">{{ goal_dict }}</pre>
+
+  <div class="section-title">JSON file contents ({{ json_filename }})</div>
+  <pre class="code-block">{{ json_contents }}</pre>
+
+  <p style="margin-top: 1rem;"><a href="{{ url_for('goals_admin') }}" class="btn">← Back to goal administration menu</a></p>
+{% endblock %}

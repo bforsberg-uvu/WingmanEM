@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% block title %}View Goals — WingmanEM{% endblock %}
+
+{% block breadcrumb %}
+  <div class="breadcrumb"><a href="{{ url_for('index') }}">Main</a> → <a href="{{ url_for('people_menu') }}">People</a> → <a href="{{ url_for('goals_admin') }}">Goals</a> → View</div>
+{% endblock %}
+
+{% block content %}
+  <h2 style="margin-bottom: 1rem;">View Goals — Select direct report</h2>
+  <p class="text-muted" style="margin-bottom: 1rem;">Direct reports that have goals:</p>
+  {% if not reports_with_goals %}
+  <p class="text-muted">No direct reports have goals yet.</p>
+  {% else %}
+  <p style="margin-bottom: 1rem;">
+    <form method="post" action="{{ url_for('goal_delete_all') }}" class="js-confirm-purge" style="display: inline-block;"
+      data-confirm-title="Delete all goals"
+      data-confirm-message="Delete all goals for all direct reports? This cannot be undone."
+      data-confirm-label="Delete all">
+      <button type="submit" class="btn btn-danger">Delete all goals (all direct reports)</button>
+    </form>
+  </p>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>ID</th>
+          <th>Name</th>
+          <th>Goals count</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in reports_with_goals %}
+        <tr>
+          <td>{{ r.get('id') }}</td>
+          <td>{{ r.get('first_name') }} {{ r.get('last_name') }}</td>
+          <td>{{ r.get('goal_count', 0) }}</td>
+          <td><a href="{{ url_for('goal_view_report', report_id=r.get('id')) }}" class="btn btn-small">Select</a></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+  <p style="margin-top: 1rem;"><a href="{{ url_for('goals_admin') }}" class="btn">← Back to goal administration menu</a></p>
+{% endblock %}

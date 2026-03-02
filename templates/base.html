@@ -15,6 +15,30 @@
     <p class="loading-text">Loading…</p>
   </div>
 
+  <div class="modal-overlay" id="confirmModal" role="dialog" aria-modal="true" aria-labelledby="confirmModalTitle" aria-hidden="true">
+    <div class="modal-dialog">
+      <h3 id="confirmModalTitle">Confirm</h3>
+      <p id="confirmModalMessage"></p>
+      <div class="modal-actions">
+        <button type="button" class="btn" id="confirmModalCancel">Cancel</button>
+        <button type="button" class="btn btn-danger" id="confirmModalConfirm">Purge</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="generateModal" role="dialog" aria-modal="true" aria-labelledby="generateModalTitle" aria-hidden="true">
+    <div class="modal-dialog">
+      <h3 id="generateModalTitle">Generate direct reports with Mistral AI</h3>
+      <p>How many direct reports do you want to generate? (1–10). Leave blank or use 3 for default.</p>
+      <label for="generateModalNum">Number:</label>
+      <input type="number" id="generateModalNum" min="1" max="10" value="3" placeholder="3" style="display: block; width: 5rem; margin: 0.5rem 0 1rem;">
+      <div class="modal-actions">
+        <button type="button" class="btn" id="generateModalCancel">Cancel</button>
+        <button type="button" class="btn btn-primary" id="generateModalConfirm">Generate</button>
+      </div>
+    </div>
+  </div>
+
   <div class="container page-enter">
     <header class="app-header">
       <h1>WingmanEM</h1>
@@ -30,6 +54,7 @@
       function showLoading() { overlay.classList.add('active'); }
       function hideLoading() { overlay.classList.remove('active'); }
       document.querySelectorAll('form').forEach(function(f) {
+        if (f.classList.contains('js-confirm-purge') || f.classList.contains('js-generate-form') || f.classList.contains('js-confirm-purge-1to1') || f.classList.contains('js-delete-goal') || f.classList.contains('js-edit-goal-form')) return;
         f.addEventListener('submit', showLoading);
       });
       document.querySelectorAll('a[href^="/"]').forEach(function(a) {
@@ -41,6 +66,151 @@
       });
       window.addEventListener('pageshow', hideLoading);
       window.addEventListener('load', hideLoading);
+
+      var modal = document.getElementById('confirmModal');
+      var modalTitle = document.getElementById('confirmModalTitle');
+      var modalMessage = document.getElementById('confirmModalMessage');
+      var modalCancel = document.getElementById('confirmModalCancel');
+      var modalConfirm = document.getElementById('confirmModalConfirm');
+      var pendingForm = null;
+
+      function openConfirm(title, message, confirmLabel, form) {
+        pendingForm = form;
+        modalTitle.textContent = title;
+        modalMessage.textContent = message;
+        modalConfirm.textContent = confirmLabel || 'Purge';
+        modal.setAttribute('aria-hidden', 'false');
+        modal.classList.add('active');
+      }
+      function closeConfirm() {
+        modal.classList.remove('active');
+        modal.setAttribute('aria-hidden', 'true');
+        pendingForm = null;
+      }
+      modalCancel.addEventListener('click', closeConfirm);
+      modalConfirm.addEventListener('click', function() {
+        if (pendingForm) {
+          pendingForm.removeEventListener('submit', pendingForm._confirmHandler);
+          showLoading();
+          pendingForm.submit();
+        }
+        closeConfirm();
+      });
+      modal.addEventListener('click', function(e) {
+        if (e.target === modal) closeConfirm();
+      });
+
+      document.querySelectorAll('form.js-confirm-purge').forEach(function(form) {
+        var title = form.getAttribute('data-confirm-title') || 'Confirm';
+        var message = form.getAttribute('data-confirm-message') || 'Are you sure?';
+        var confirmLabel = form.getAttribute('data-confirm-label') || 'Purge';
+        function handleSubmit(e) {
+          e.preventDefault();
+          form._confirmHandler = handleSubmit;
+          openConfirm(title, message, confirmLabel, form);
+        }
+        form.addEventListener('submit', handleSubmit);
+      });
+
+      document.querySelectorAll('form.js-delete-goal').forEach(function(form) {
+        var title = form.getAttribute('data-confirm-title') || 'Delete goal';
+        var message = form.getAttribute('data-confirm-message') || 'Delete this goal? This cannot be undone.';
+        var fakeForm = {
+          removeEventListener: function() {},
+          submit: function() {
+            showLoading();
+            fetch(form.action, { method: 'DELETE', headers: { 'X-Requested-With': 'XMLHttpRequest' } })
+              .then(function(r) {
+                if (r.redirected) window.location = r.url;
+                else window.location.reload();
+              })
+              .catch(function() { hideLoading(); });
+          }
+        };
+        form.addEventListener('submit', function(e) {
+          e.preventDefault();
+          openConfirm(title, message, 'Delete', fakeForm);
+        });
+      });
+
+      document.querySelectorAll('form.js-edit-goal-form').forEach(function(form) {
+        form.addEventListener('submit', function(e) {
+          e.preventDefault();
+          var fd = new FormData(form);
+          var body = new URLSearchParams(fd).toString();
+          showLoading();
+          fetch(form.action, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'X-Requested-With': 'XMLHttpRequest' },
+            body: body
+          })
+            .then(function(r) {
+              if (r.redirected) window.location = r.url;
+              else window.location.reload();
+            })
+            .catch(function() { hideLoading(); });
+        });
+      });
+
+      document.querySelectorAll('.js-purge-1to1-trigger').forEach(function(btn) {
+        btn.addEventListener('click', function() {
+          var form = btn.closest('form');
+          if (!form) return;
+          var select = form.querySelector('#purge-report-select');
+          if (!select || !select.value) {
+            alert('Please select a direct report.');
+            return;
+          }
+          var opt = select.options[select.selectedIndex];
+          var hidden = form.querySelector('input[name="report_id"]');
+          if (hidden) hidden.value = select.value;
+          var msg = 'Remove all 1:1 summaries for ' + (opt ? opt.text : 'this report') + '? This cannot be undone.';
+          openConfirm('Purge 1:1 summaries', msg, 'Purge all', form);
+        });
+      });
+
+      var generateModal = document.getElementById('generateModal');
+      var generateModalNum = document.getElementById('generateModalNum');
+      var generateModalCancel = document.getElementById('generateModalCancel');
+      var generateModalConfirm = document.getElementById('generateModalConfirm');
+      var generateForm = null;
+
+      document.querySelectorAll('.js-open-generate-dialog').forEach(function(btn) {
+        btn.addEventListener('click', function() {
+          generateForm = btn.closest('form');
+          if (generateForm) {
+            generateModalNum.value = '3';
+            generateModal.setAttribute('aria-hidden', 'false');
+            generateModal.classList.add('active');
+            generateModalNum.focus();
+          }
+        });
+      });
+      generateModalCancel.addEventListener('click', function() {
+        generateModal.classList.remove('active');
+        generateModal.setAttribute('aria-hidden', 'true');
+        generateForm = null;
+      });
+      generateModalConfirm.addEventListener('click', function() {
+        if (generateForm) {
+          var numInput = generateForm.querySelector('input[name="num"]');
+          var val = generateModalNum.value.trim();
+          var n = 3;
+          if (val) {
+            var parsed = parseInt(val, 10);
+            if (!isNaN(parsed)) n = Math.max(1, Math.min(10, parsed));
+          }
+          if (numInput) numInput.value = String(n);
+          showLoading();
+          generateForm.submit();
+        }
+        generateModal.classList.remove('active');
+        generateModal.setAttribute('aria-hidden', 'true');
+        generateForm = null;
+      });
+      generateModal.addEventListener('click', function(e) {
+        if (e.target === generateModal) generateModalCancel.click();
+      });
     })();
   </script>
   {% block scripts %}{% endblock %}

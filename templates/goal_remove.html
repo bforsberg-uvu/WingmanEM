@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% block title %}Remove Goals — WingmanEM{% endblock %}
+
+{% block breadcrumb %}
+  <div class="breadcrumb"><a href="{{ url_for('index') }}">Main</a> → <a href="{{ url_for('people_menu') }}">People</a> → <a href="{{ url_for('goals_admin') }}">Goals</a> → Remove</div>
+{% endblock %}
+
+{% block content %}
+  <h2 style="margin-bottom: 1rem;">Remove Goals</h2>
+  <p class="text-muted" style="margin-bottom: 1rem;">Select a direct report to remove all their goals.</p>
+  {% if not reports_with_goals %}
+  <p class="text-muted">No direct reports have goals to remove.</p>
+  {% else %}
+  <form method="post" action="{{ url_for('goal_remove') }}" class="js-confirm-purge" data-confirm-title="Remove goals" data-confirm-message="Remove all goals for the selected direct report? This cannot be undone." data-confirm-label="Remove all">
+    <label for="remove-report-id">Direct report</label>
+    <select name="direct_report_id" id="remove-report-id" required>
+      <option value="">— Select direct report —</option>
+      {% for r in reports_with_goals %}
+      <option value="{{ r.get('id') }}">{{ r.get('first_name') }} {{ r.get('last_name') }} (ID {{ r.get('id') }}) — {{ r.get('goal_count', 0) }} goal(s)</option>
+      {% endfor %}
+    </select>
+    <div class="form-actions">
+      <button type="submit" class="btn btn-danger">Remove all goals</button>
+      <a href="{{ url_for('goals_admin') }}" class="btn">Cancel</a>
+    </div>
+  </form>
+  {% endif %}
+  <p style="margin-top: 1rem;"><a href="{{ url_for('goals_admin') }}" class="btn">← Back to goal administration menu</a></p>
+{% endblock %}

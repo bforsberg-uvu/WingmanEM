@@ -11,20 +11,20 @@
   <div class="form-actions" style="margin-bottom: 1.5rem;">
     <a href="{{ url_for('direct_report_add') }}" class="btn btn-primary">Add direct report</a>
     {% if show_generate %}
-    <form method="post" action="{{ url_for('direct_reports_generate') }}" style="display: inline-block;">
-      <input type="hidden" name="num" value="3">
-      <button type="submit" class="btn">Generate with Mistral AI (3)</button>
+    <form method="post" action="{{ url_for('direct_reports_generate') }}" class="js-generate-form" style="display: inline-block;">
+      <input type="hidden" name="num" id="generate-num-hidden" value="3">
+      <button type="button" class="btn js-open-generate-dialog">Generate with Mistral AI</button>
     </form>
     {% endif %}
-    <form method="post" action="{{ url_for('direct_reports_purge') }}" style="display: inline-block;" onsubmit="return confirm('Purge all direct reports?');">
+    <form method="post" action="{{ url_for('direct_reports_purge') }}" class="js-confirm-purge" style="display: inline-block;"
+      data-confirm-title="Purge all direct reports"
+      data-confirm-message="Remove all direct reports from the file and database? This cannot be undone."
+      data-confirm-label="Purge all">
       <button type="submit" class="btn btn-danger">Purge all</button>
     </form>
   </div>
 
   <div class="section-title">From file (direct_reports.json)</div>
-  {% if not file_reports %}
-  <p class="text-muted">No direct reports yet.</p>
-  {% else %}
   <div class="table-wrap">
     <table>
       <thead>
@@ -34,6 +34,7 @@
         </tr>
       </thead>
       <tbody>
+        {% if file_reports %}
         {% for r in file_reports %}
         <tr>
           {% for key, _header, _w in columns %}<td>{{ r.get(key) or '' }}</td>{% endfor %}
@@ -45,16 +46,17 @@
           </td>
         </tr>
         {% endfor %}
+        {% else %}
+        <tr class="table-empty-row">
+          <td colspan="{{ columns|length + 1 }}">No direct reports yet.</td>
+        </tr>
+        {% endif %}
       </tbody>
     </table>
   </div>
   <p>Total: {{ file_reports|length }}</p>
-  {% endif %}
 
   <div class="section-title">From database</div>
-  {% if not db_reports %}
-  <p class="text-muted">No direct reports in database.</p>
-  {% else %}
   <div class="table-wrap">
     <table>
       <thead>
@@ -63,16 +65,21 @@
         </tr>
       </thead>
       <tbody>
+        {% if db_reports %}
         {% for r in db_reports %}
         <tr>
           {% for key, _header, _w in columns %}<td>{{ r.get(key) or '' }}</td>{% endfor %}
         </tr>
         {% endfor %}
+        {% else %}
+        <tr class="table-empty-row">
+          <td colspan="{{ columns|length }}">No direct reports in database.</td>
+        </tr>
+        {% endif %}
       </tbody>
     </table>
   </div>
   <p>Total: {{ db_reports|length }}</p>
-  {% endif %}
 
   <p style="margin-top: 1rem;"><a href="{{ url_for('people_menu') }}" class="btn">← Back to People</a></p>
 {% endblock %}

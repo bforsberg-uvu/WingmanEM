@@ -36,7 +36,7 @@ a:hover {
 }
 
 .container {
-  max-width: 900px;
+  max-width: 1400px;
   margin: 0 auto;
   padding: 1.5rem;
 }
@@ -210,6 +210,10 @@ a:hover {
 .btn-danger:hover {
   background: rgba(248, 113, 113, 0.15);
 }
+.btn-small {
+  padding: 0.25rem 0.5rem;
+  font-size: 0.8rem;
+}
 
 /* Breadcrumb / back link */
 .breadcrumb {
@@ -221,12 +225,20 @@ a:hover {
   color: var(--accent);
 }
 
-/* Tables */
+/* Tables — use full horizontal space; scroll only when content is wider than viewport */
 .table-wrap {
   overflow-x: auto;
   margin: 1rem 0;
   border-radius: 8px;
   border: 1px solid var(--border);
+  -webkit-overflow-scrolling: touch;
+}
+.table-wrap table {
+  width: 100%;
+  min-width: max-content;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+  table-layout: fixed;
 }
 table {
   width: 100%;
@@ -237,6 +249,11 @@ th, td {
   padding: 0.6rem 0.75rem;
   text-align: left;
   border-bottom: 1px solid var(--border);
+  min-width: 5rem;
+}
+.table-wrap th,
+.table-wrap td {
+  min-width: 5.5rem;
 }
 th {
   background: var(--bg-card);
@@ -251,6 +268,65 @@ tr:last-child td {
 }
 tr:hover td {
   background: rgba(51, 65, 85, 0.3);
+}
+tr.table-empty-row td {
+  color: var(--text-muted);
+  font-style: italic;
+  text-align: left;
+  padding: 0.6rem 0.75rem;
+}
+.summary-excerpt {
+  display: block;
+  max-width: 28rem;
+  line-height: 1.4;
+}
+.cell-actions {
+  white-space: nowrap;
+}
+
+/* 1:1 summary blocks: no border/line between multiple summaries */
+.summary-block {
+  margin-bottom: 1rem;
+  padding: 0;
+  border: none;
+  background: transparent;
+}
+.summary-block:last-child {
+  margin-bottom: 0;
+}
+
+/* Tables: consistent vertical alignment so all row types line up */
+.table-wrap table th,
+.table-wrap table td {
+  vertical-align: middle;
+}
+
+/* 1:1 table: same row height and vertical alignment for every row */
+.table-one-to-one tbody td {
+  vertical-align: middle;
+  padding-top: 0.6rem;
+  padding-bottom: 0.6rem;
+  border-bottom: none;
+}
+/* Line only after the last row of each direct report */
+.table-one-to-one tbody tr.report-group-end td {
+  border-bottom: 1px solid var(--border);
+}
+.table-one-to-one thead th {
+  border-bottom: 1px solid var(--border);
+}
+.table-one-to-one .cell-inner {
+  display: inline-flex;
+  align-items: center;
+  min-height: 2.25rem;
+  vertical-align: middle;
+}
+.table-one-to-one .cell-actions .cell-inner {
+  min-height: 2.25rem;
+}
+.view-all-wrap {
+  margin-left: 1rem;
+  display: inline-block;
 }
 
 .text-muted {
@@ -316,4 +392,66 @@ form select:focus {
 }
 .instructions strong {
   color: var(--text-primary);
+}
+
+.code-block {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 1rem;
+  overflow-x: auto;
+  font-size: 0.85rem;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+/* Confirmation modal — matches app colors */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.8);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10000;
+  padding: 1.5rem;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.2s ease, visibility 0.2s ease;
+}
+.modal-overlay.active {
+  opacity: 1;
+  visibility: visible;
+}
+.modal-dialog {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 1.5rem 1.75rem;
+  max-width: 420px;
+  width: 100%;
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.4);
+}
+.modal-dialog h3 {
+  margin: 0 0 0.5rem;
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.modal-dialog p {
+  margin: 0 0 1.25rem;
+  font-size: 0.95rem;
+  color: var(--text-muted);
+  line-height: 1.5;
+}
+.modal-dialog .modal-actions {
+  display: flex;
+  gap: 0.75rem;
+  justify-content: flex-end;
+}
+.modal-dialog .modal-actions .btn-danger {
+  background: transparent;
+}
+.modal-dialog .modal-actions .btn-danger:hover {
+  background: rgba(248, 113, 113, 0.2);
 }

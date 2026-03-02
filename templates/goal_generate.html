@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block title %}Generate Goal Data — WingmanEM{% endblock %}
+
+{% block breadcrumb %}
+  <div class="breadcrumb"><a href="{{ url_for('index') }}">Main</a> → <a href="{{ url_for('people_menu') }}">People</a> → <a href="{{ url_for('goals_admin') }}">Goals</a> → Generate</div>
+{% endblock %}
+
+{% block content %}
+  <h2 style="margin-bottom: 1rem;">Generate Goal Data with Mistral AI</h2>
+  <p class="text-muted" style="margin-bottom: 1rem;">Generate realistic professional development goals for your direct reports. Goals will be distributed across existing direct reports.</p>
+  <form method="post" action="{{ url_for('goal_generate') }}">
+    <label for="num">Number of goals to generate (1–20)</label>
+    <input type="number" name="num" id="num" min="1" max="20" value="5" required style="display: block; width: 5rem; margin: 0.5rem 0 1rem;">
+    <div class="form-actions">
+      <button type="submit" class="btn btn-primary">Generate</button>
+      <a href="{{ url_for('goals_admin') }}" class="btn">Cancel</a>
+    </div>
+  </form>
+{% endblock %}

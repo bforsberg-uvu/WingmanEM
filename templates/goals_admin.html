@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block title %}Administer Direct Report Goals — WingmanEM{% endblock %}
+
+{% block breadcrumb %}
+  <div class="breadcrumb"><a href="{{ url_for('index') }}">Main</a> → <a href="{{ url_for('people_menu') }}">People</a> → Administer Direct Report Goals</div>
+{% endblock %}
+
+{% block content %}
+  <h2 style="margin-bottom: 1rem;">Administer Direct Report's Goals</h2>
+  <div class="menu-grid">
+    <div class="card">
+      <a href="{{ url_for('goal_add') }}">
+        <h2>Add Goal</h2>
+        <p>Add a goal for a direct report.</p>
+      </a>
+    </div>
+    <div class="card">
+      <a href="{{ url_for('goal_view') }}">
+        <h2>View, Edit and Delete Goals</h2>
+        <p>View goals by direct report.</p>
+      </a>
+    </div>
+    {% if show_generate %}
+    <div class="card">
+      <a href="{{ url_for('goal_generate') }}">
+        <h2>Generate Goal Data</h2>
+        <p>Generate goals for direct reports using Mistral AI.</p>
+      </a>
+    </div>
+    {% endif %}
+  </div>
+  {% if 'generated' in request.args %}
+  <p class="text-muted" style="margin-top: 1rem;">Generated {{ request.args.get('generated') }} goal(s).</p>
+  {% endif %}
+  <p style="margin-top: 1rem;"><a href="{{ url_for('people_menu') }}" class="btn">← Back to People</a></p>
+{% endblock %}

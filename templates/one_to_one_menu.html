@@ -14,26 +14,64 @@
         <p>Upload audio; transcribe and summarize with Mistral AI.</p>
       </a>
     </div>
-    <div class="card">
-      <h2>View 1:1 summaries by direct report</h2>
-      <p>Select a direct report below to view, delete by date, or purge all summaries.</p>
-    </div>
   </div>
 
-  <div class="section-title">Select direct report</div>
-  {% if not reports %}
+  <div class="section-title" style="margin-top: 1.5rem;">1:1 summaries by direct report</div>
+  {% if not report_summaries %}
   <p class="text-muted">No direct reports. Add one from Administer Direct Reports first.</p>
   {% else %}
-  <ul style="list-style: none; padding: 0;">
-    {% for r in reports %}
-    <li style="margin-bottom: 0.5rem;">
-      <a href="{{ url_for('one_to_one_view', report_id=r.get('id')) }}">ID {{ r.get('id') }}: {{ r.get('first_name') }} {{ r.get('last_name') }}</a>
-      · <a href="{{ url_for('one_to_one_delete', report_id=r.get('id')) }}">Delete by date</a>
-      · <a href="{{ url_for('one_to_one_purge', report_id=r.get('id')) }}">Purge all</a>
-    </li>
-    {% endfor %}
-  </ul>
+  <div class="table-wrap table-one-to-one-wrap">
+    <table class="table-one-to-one">
+      <thead>
+        <tr>
+          <th>Direct report</th>
+          <th>Date</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for report, summaries in report_summaries %}
+        {% for s in summaries %}
+        <tr{% if loop.last %} class="report-group-end"{% endif %}>
+          <td><span class="cell-inner">{% if loop.first %}{{ report.get('first_name') }} {{ report.get('last_name') }} (ID {{ report.get('id') }}){% else %}&nbsp;{% endif %}</span></td>
+          <td><span class="cell-inner">{% if loop.first %}
+            <a href="{{ url_for('one_to_one_view', report_id=report.get('id'), date=s.date) }}">{{ s.date }}</a>
+            <span class="view-all-wrap"><a href="{{ url_for('one_to_one_view', report_id=report.get('id')) }}" class="btn" style="padding: 0.25rem 0.5rem; font-size: 0.8rem;">View all</a></span>
+          {% else %}
+            <a href="{{ url_for('one_to_one_view', report_id=report.get('id'), date=s.date) }}">{{ s.date }}</a>
+          {% endif %}</span></td>
+          <td class="cell-actions"><span class="cell-inner">{% if loop.first %}
+            <a href="{{ url_for('one_to_one_delete', report_id=report.get('id')) }}" class="btn btn-danger" style="padding: 0.25rem 0.5rem; font-size: 0.8rem;">Delete by date</a>
+          {% else %}&nbsp;{% endif %}</span></td>
+        </tr>
+        {% else %}
+        <tr class="table-empty-row report-group-end">
+          <td><span class="cell-inner">{{ report.get('first_name') }} {{ report.get('last_name') }} (ID {{ report.get('id') }})</span></td>
+          <td><span class="cell-inner">No 1:1 summaries yet.</span></td>
+          <td class="cell-actions"><span class="cell-inner">
+            <a href="{{ url_for('one_to_one_delete', report_id=report.get('id')) }}" class="btn btn-danger" style="padding: 0.25rem 0.5rem; font-size: 0.8rem;">Delete by date</a>
+          </span></td>
+        </tr>
+        {% endfor %}
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <div class="section-title" style="margin-top: 1.5rem;">Purge all</div>
+  <p class="text-muted" style="margin-bottom: 0.5rem;">Remove all 1:1 summaries for one direct report.</p>
+  <form method="post" action="{{ url_for('one_to_one_purge') }}" class="js-confirm-purge-1to1 form-inline-purge" style="display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap;">
+    <input type="hidden" name="report_id" id="purge-1to1-report-id" value="">
+    <label for="purge-report-select">Report:</label>
+    <select id="purge-report-select" required style="width: auto; max-width: 280px;">
+      <option value="">— Select direct report —</option>
+      {% for r in reports %}
+      <option value="{{ r.get('id') }}">{{ r.get('first_name') }} {{ r.get('last_name') }} (ID {{ r.get('id') }})</option>
+      {% endfor %}
+    </select>
+    <button type="button" class="btn btn-danger js-purge-1to1-trigger">Purge all</button>
+  </form>
   {% endif %}
 
-  <p style="margin-top: 1rem;"><a href="{{ url_for('people_menu') }}" class="btn">← Back to People</a></p>
+  <p style="margin-top: 1.5rem;"><a href="{{ url_for('people_menu') }}" class="btn">← Back to People</a></p>
 {% endblock %}

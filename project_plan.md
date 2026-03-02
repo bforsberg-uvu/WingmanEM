@@ -80,6 +80,17 @@ While WingmanEM is purpose-built for Software Engineering Managers addressing th
 | role_start_date | DATE | Used to calculate "Tenure in Role" to identify when a report might be due for a promotion or new challenge. |
 | partner_name | VARCHAR(50) | Valuable "soft" data for building rapport during 1:1s. |
 
+### Table: Direct_Report_Goals
+
+| Attribute | Data Type | Rationale |
+|-----------|-----------|-----------|
+| id | INTEGER | Primary Key. Use AUTO_INCREMENT (MySQL) or PRIMARY KEY (SQLite). |
+| direct_report_id | INTEGER | Id for the direct report to whom the goal belongs. |
+| goal_title | VARCHAR(50) | Title of Goal. |
+| goal_description | VARCHAR(100) | Detailed Description of Goal. |
+| goal_completion_date | DATE | Completion date of goal. |
+
+
 ## Program Chunks
 
 ### Chunk #1:
@@ -137,3 +148,19 @@ Use professional colors in the app and user color consistently throughout the ap
 Indicate the app is doing something by displaying a fun animation.
 Create a web_app.py file that is the root of the app.
 Run the flask server and start the app when the web_app.py script is executed
+
+### Chunk #5:
+To implement this chunk we want to add a section for employee goals with the following criteria
+
+Create the database table direct_report_goals according the the specification contained the data model section of this file.
+Create a json file to store the same data.
+Add an menu item to the people coaching and management menu of the the app to admin administer direct report goals.
+Clicking on this item will take the user to another menu title 'Administer Direct Report's Goals' which will have the following items:  Add Goal, View Goals, Remove Goals.
+Add an flask route: /add which will display a form that allow me to select the direct report I want to add the goal for, input the goal title, the goal description and specify a completion date. 
+The add form should be stored in the 'templates' folder
+The form should have a button to save the information which when pressed send a POST request to another flask route /add_goal which will extract the data, structure it as a dictionary and save it to both the created json file and direct_report_goals database table.  The json file and database table should always be in sync. Once the data has been saved the user should be directed to another Flask route /goal_successfully_added.
+The goal_successfully_added route should display the actual POST request that was used in the previous step as well as a user friend version of the post request on the screen. It should also display the dictionary that the data was structured as and the json file and database table contents. There should be a button to take the user back to the goal adminstration menu.
+If the direct report is deleted the associated goal data should be deleted from both the json file and database.
+When the user clicks on the 'View Goals' take the user to a new route /view which should present a table listing the direct reports which have goals.  The table should have a button to select the direct report.
+When the user click on the button to select the direct a GET Request should be generated to a route called /view_direct_report_goals to retrieve the direct reports goals. 
+The /view_direct_report_goals should display the goal in a nice tabular format.  The actual get request sent to this route should be also displayed below as well as a user friendy version for the user to view.  There should be a button to return the user to the main goal admin menu.
