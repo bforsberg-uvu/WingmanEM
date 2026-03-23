@@ -130,6 +130,7 @@ def direct_report_delete():
 @app.route("/people/direct-reports/purge", methods=["POST"])
 def direct_reports_purge():
     app_module._delete_all_goals()
+    app_module._delete_employee_comp_statements()
     app_module.direct_reports.clear()
     app_module._save_direct_reports()
     return redirect(url_for("direct_reports_list"))
@@ -151,6 +152,14 @@ def direct_reports_generate():
     return redirect(url_for("direct_reports_list"))
 
 
+@app.route("/people/direct-reports/generate_ratings", methods=["POST"])
+def direct_reports_generate_ratings():
+    """Generate employee compensation statements JSON from direct reports."""
+    app_module._generate_employee_comp_statements()
+    return redirect(url_for("direct_reports_list"))
+
+
+# ----- Management tips -----
 # ----- Management tips -----
 
 @app.route("/people/tips")
@@ -389,6 +398,48 @@ def goal_generate():
         added = app_module._generate_goals_with_ai(num)
         return redirect(url_for("goals_admin", generated=added))
     return render_template("goal_generate.html")
+
+
+@app.route("/items")
+def comp_items():
+    """Read employee_comp_data.json and render compensation statements."""
+    import os as _os_mod, json as _json_mod
+
+    if not _os_mod.path.isfile(app_module.EMPLOYEE_COMP_DATA_FILE):
+        # If file doesn't exist yet, generate once from current direct reports.
+        app_module._generate_employee_comp_statements()
+    try:
+        with open(app_module.EMPLOYEE_COMP_DATA_FILE, encoding="utf-8") as f:
+            items = _json_mod.load(f)
+        if not isinstance(items, list):
+            items = []
+    except Exception:
+        items = []
+    # Build a simple lookup for rating labels
+    rating_labels = {
+        5: "Exceptional Contribution",
+        4: "Exceed Expectations",
+        3: "Meets Expectations",
+        2: "Missed Expectations",
+        1: "Needs improvement",
+    }
+    selected_report_id = request.args.get("report_id", type=int)
+    selected_item = None
+    if selected_report_id:
+        for it in items:
+            try:
+                if int(it.get("direct_report_id") or 0) == selected_report_id:
+                    selected_item = it
+                    break
+            except Exception:
+                continue
+    return render_template(
+        "comp_items.html",
+        items=items,
+        rating_labels=rating_labels,
+        selected_item=selected_item,
+        selected_report_id=selected_report_id,
+    )
 
 
 @app.route("/people/goals/add", methods=["GET"])

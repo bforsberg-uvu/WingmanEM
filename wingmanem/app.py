@@ -53,6 +53,7 @@ management_tips: list[dict[str, str]] = []
 DIRECT_REPORTS_FILE = "direct_reports.json"
 MANAGEMENT_TIPS_FILE = "management_tips.json"
 DIRECT_REPORT_GOALS_FILE = "direct_report_goals.json"
+EMPLOYEE_COMP_DATA_FILE = "employee_comp_data.json"
 DATABASE_PATH = "wingmanem.db"
 
 # ANSI colors for menu items
@@ -628,6 +629,74 @@ Output only this JSON object, no other text."""
         return added
     except Exception:
         return 0
+
+
+def _generate_employee_comp_statements() -> list[dict[str, Any]]:
+    """Generate compensation statements for direct reports and write to JSON file."""
+    if not direct_reports:
+        statements: list[dict[str, Any]] = []
+        try:
+            with open(EMPLOYEE_COMP_DATA_FILE, "w", encoding="utf-8") as f:
+                json.dump(statements, f, indent=2)
+        except OSError:
+            pass
+        return statements
+    statements = []
+    for r in direct_reports:
+        rid = r.get("id")
+        if not rid:
+            continue
+        first = (r.get("first_name") or "").strip() or "Unknown"
+        last = (r.get("last_name") or "").strip() or "Employee"
+        rating = random.randint(1, 5)
+        # Base salary range
+        salary = random.randint(90000, 200000)
+        # Percentage change by rating
+        if rating == 5:
+            pct = random.uniform(8.0, 12.0)
+        elif rating == 4:
+            pct = random.uniform(5.0, 8.0)
+        elif rating == 3:
+            pct = random.uniform(3.0, 5.0)
+        elif rating == 2:
+            pct = random.uniform(1.0, 3.0)
+        else:
+            pct = random.uniform(0.0, 1.0)
+        dollar_change = int(round(salary * (pct / 100.0)))
+        new_salary = salary + dollar_change
+        # Bonus reflective of rating: higher rating → higher bonus, capped 10k–30k
+        base_bonus = 10000 + (rating - 1) * 5000
+        max_bonus = base_bonus + 5000
+        bonus = random.randint(base_bonus, max_bonus)
+        bonus = max(10000, min(30000, bonus))
+        statements.append(
+            {
+                "direct_report_id": int(rid),
+                "first_name": first,
+                "last_name": last,
+                "rating": rating,
+                "salary": salary,
+                "percent_change": round(pct, 2),
+                "dollar_change": dollar_change,
+                "new_salary": new_salary,
+                "bonus": bonus,
+            }
+        )
+    try:
+        with open(EMPLOYEE_COMP_DATA_FILE, "w", encoding="utf-8") as f:
+            json.dump(statements, f, indent=2)
+    except OSError:
+        pass
+    return statements
+
+
+def _delete_employee_comp_statements() -> None:
+    """Delete employee_comp_data.json if present."""
+    try:
+        if os.path.isfile(EMPLOYEE_COMP_DATA_FILE):
+            os.remove(EMPLOYEE_COMP_DATA_FILE)
+    except OSError:
+        pass
 
 
 # ============================================================================

@@ -164,3 +164,12 @@ If the direct report is deleted the associated goal data should be deleted from 
 When the user clicks on the 'View Goals' take the user to a new route /view which should present a table listing the direct reports which have goals.  The table should have a button to select the direct report.
 When the user click on the button to select the direct a GET Request should be generated to a route called /view_direct_report_goals to retrieve the direct reports goals. 
 The /view_direct_report_goals should display the goal in a nice tabular format.  The actual get request sent to this route should be also displayed below as well as a user friendy version for the user to view.  There should be a button to return the user to the main goal admin menu.
+
+
+### Chunk #6:
+To implement this chunk, create another area in the application under 'People Management & Coaching' to create direct reports compensation change statements with the following criteria 
+Add Jinja2 to the project.
+Create a Jinja2 template letter for a direct report for their yearly compensation adjustment. This template should allow substitution of name, percentage compensation change, dollar compensation change, bonus amount, and a rating from 5 to 1 with this breakdown:  5 - Exceptional Contribution, 4 - Exceed Expectations,  3 - Meets Expectations,  2 - Missed Expectations,  1 - Needs improvement.    Create a paragraph for each of these rating that will be displayed based on the rating substitution. 
+Add a button under 'Adminster Direct Reports' title 'Generate Employee Ratings' which will create an employee_comp_data.json file from the list of current direct reports and randomly assign a rating (1 to 5) to each employee, a salary, a percentage compensation change, a dollar compensation change which is derived by multiplying the salary by the percentage compensation change and adding it to the original salary, a random bonus amount ranging from $10000 to $30000 which is reflective of the rating recieved. Each time the button is pressed regenerate the file.
+Create a route called '/items' which is reached by pressing the 'Generate Direct Report Comp Statements' that handles a get request and reads in and parses all the data from the employee_comp_data.json file into a dictionary and then uses a for loop in the template letter created earlier to generate compensation statement for each of the direct reports. 
+The compensation statements should be presented to the user in a tabular format allow them to open each one individually. 

@@ -1,0 +1,28 @@
+{% set full_name = item.first_name ~ ' ' ~ item.last_name %}
+<p>Dear {{ full_name }},</p>
+
+<p>We are pleased to share the details of your annual compensation review.</p>
+
+<p>Your current base salary is <strong>${{ '%.0f'|format(item.salary) }}</strong>. Based on this year&#39;s performance, you are receiving a
+base salary adjustment of <strong>{{ item.percent_change }}%</strong>, which corresponds to a dollar change of
+<strong>${{ '%.0f'|format(item.dollar_change) }}</strong>. Your new base salary will be
+<strong>${{ '%.0f'|format(item.new_salary) }}</strong>, effective with the start of the new compensation cycle.</p>
+
+<p>In addition, you are receiving an annual bonus of <strong>${{ '%.0f'|format(item.bonus) }}</strong>.</p>
+
+{% if item.rating == 5 %}
+<p>Your overall performance rating for this period is <strong>5 — Exceptional Contribution</strong>. You consistently deliver impact well beyond expectations, take ownership of complex initiatives, and elevate the performance of the broader team.</p>
+{% elif item.rating == 4 %}
+<p>Your overall performance rating for this period is <strong>4 — Exceed Expectations</strong>. You reliably deliver high-quality results, take initiative, and contribute meaningfully to team and organizational goals.</p>
+{% elif item.rating == 3 %}
+<p>Your overall performance rating for this period is <strong>3 — Meets Expectations</strong>. You are performing well in your role, delivering on agreed goals, and contributing steadily to the team&#39;s success.</p>
+{% elif item.rating == 2 %}
+<p>Your overall performance rating for this period is <strong>2 — Missed Expectations</strong>. While there were positive contributions, there are important areas where expectations were not fully met, and we will partner with you on a clear improvement plan.</p>
+{% else %}
+<p>Your overall performance rating for this period is <strong>1 — Needs Improvement</strong>. We expect to see significant progress in core responsibilities and behaviors; your manager will work closely with you on specific goals, support, and timelines.</p>
+{% endif %}
+
+<p>Thank you for your contributions and continued commitment to the team.</p>
+
+<p>Sincerely,<br>Leadership Team</p>
+

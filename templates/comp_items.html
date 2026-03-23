@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+{% block title %}Compensation Statements — WingmanEM{% endblock %}
+
+{% block breadcrumb %}
+  <div class="breadcrumb"><a href="{{ url_for('index') }}">Main</a> → <a href="{{ url_for('people_menu') }}">People</a> → <a href="{{ url_for('direct_reports_list') }}">Direct Reports</a> → Compensation Statements</div>
+{% endblock %}
+
+{% block content %}
+  <h2 style="margin-bottom: 1rem;">Direct Report Compensation Statements</h2>
+
+  {% if not items %}
+  <p class="text-muted">No compensation statements found. Use &quot;Generate Employee Ratings&quot; first.</p>
+  {% else %}
+  {% if selected_item %}
+  {% set item = selected_item %}
+  <div class="card" style="margin-bottom: 1rem;">
+    <h3 style="margin-top: 0;">Compensation statement — {{ item.first_name }} {{ item.last_name }} (ID {{ item.direct_report_id }})</h3>
+    <p class="text-muted" style="margin-bottom: 0.75rem;">
+      Rating: {{ item.rating }} — {{ rating_labels.get(item.rating, '') }} ·
+      Base salary: ${{ "%.0f"|format(item.salary) }} → ${{ "%.0f"|format(item.new_salary) }} ·
+      Change: {{ item.percent_change }}% (${{ "%.0f"|format(item.dollar_change) }}) ·
+      Bonus: ${{ "%.0f"|format(item.bonus) }}
+    </p>
+    <div style="line-height: 1.6;">
+      {% include "comp_letter.html" %}
+    </div>
+    <p style="margin-top: 1rem;">
+      <a class="btn btn-small" href="{{ url_for('comp_items') }}">Close statement</a>
+    </p>
+  </div>
+  {% endif %}
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Direct report</th>
+          <th>Rating</th>
+          <th>% change</th>
+          <th>Current salary</th>
+          <th>New salary</th>
+          <th>Bonus</th>
+          <th>Statement</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for s in items %}
+        {% set item = s %}
+        <tr>
+          <td>{{ item.first_name }} {{ item.last_name }} (ID {{ item.direct_report_id }})</td>
+          <td>{{ item.rating }} — {{ rating_labels.get(item.rating, '') }}</td>
+          <td>{{ item.percent_change }}%</td>
+          <td>${{ "%.0f"|format(item.salary) }}</td>
+          <td>${{ "%.0f"|format(item.new_salary) }}</td>
+          <td>${{ "%.0f"|format(item.bonus) }}</td>
+          <td>
+            <a class="btn btn-small" href="{{ url_for('comp_items', report_id=item.direct_report_id) }}">View statement</a>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+
+  <p style="margin-top: 1rem;"><a href="{{ url_for('direct_reports_list') }}" class="btn">← Back to Direct Reports</a></p>
+{% endblock %}
+

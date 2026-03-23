@@ -16,6 +16,10 @@
       <button type="button" class="btn js-open-generate-dialog">Generate with Mistral AI</button>
     </form>
     {% endif %}
+    <form method="post" action="{{ url_for('direct_reports_generate_ratings') }}" style="display: inline-block;">
+      <button type="submit" class="btn">Generate Direct Report Rating</button>
+    </form>
+    <a href="{{ url_for('comp_items') }}" class="btn">Generate Direct Report Comp Statements</a>
     <form method="post" action="{{ url_for('direct_reports_purge') }}" class="js-confirm-purge" style="display: inline-block;"
       data-confirm-title="Purge all direct reports"
       data-confirm-message="Remove all direct reports from the file and database? This cannot be undone."
