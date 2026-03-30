@@ -7,5 +7,29 @@
 
 {% block content %}
   <h2 style="margin-bottom: 1rem;">Developer menu</h2>
-  <p><a href="{{ url_for('index') }}" class="btn">← Back to main menu</a></p>
+  <p class="text-muted" style="margin-bottom: 0.75rem;">Documentation focused on <strong>SQLAlchemy ORM</strong> and <strong>SQLite</strong>: models, sessions, loads, and full-table replaces.</p>
+  <p class="text-muted" style="margin-bottom: 1.5rem;">Data is read with <code>_db_load_*</code> (typically <code>select()</code> on mapped classes). Writes that replace an entire logical table use <code>_db_replace_*_from_list</code>: <code>delete(ORM)</code>, then <code>session.add()</code> per row, <code>commit()</code>. Tables are ensured by <code>Base.metadata.create_all()</code> in <code>wingmanem/database.py</code>.</p>
+
+  <div class="menu-grid">
+    <div class="card">
+      <a href="{{ url_for('developer_schema') }}">
+        <h2>Schema &amp; ORM models</h2>
+        <p>SQLite DDL next to each declarative model in <code>orm_models.py</code>.</p>
+      </a>
+    </div>
+    <div class="card">
+      <a href="{{ url_for('developer_direct_reports') }}">
+        <h2>Direct reports ORM</h2>
+        <p><code>DirectReportORM</code>, <code>_db_load_direct_reports</code>, <code>_db_replace_direct_reports_from_list</code>.</p>
+      </a>
+    </div>
+    <div class="card">
+      <a href="{{ url_for('developer_comp_statements') }}">
+        <h2>Compensation statements</h2>
+        <p><code>/items</code>, <code>DirectReportCompDataORM</code>, <code>_db_load_direct_report_comp_data</code>, Jinja templates.</p>
+      </a>
+    </div>
+  </div>
+
+  <p style="margin-top: 1.5rem;"><a href="{{ url_for('index') }}" class="btn">← Back to main menu</a></p>
 {% endblock %}

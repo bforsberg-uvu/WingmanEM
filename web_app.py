@@ -24,7 +24,7 @@ app.config["MAX_CONTENT_LENGTH"] = 32 * 1024 * 1024  # 32 MB for uploads
 
 
 def init_data():
-    """Load data from files and DB at startup (same as CLI main())."""
+    """Init DB, migrate JSON into empty tables if needed, then load globals (DB-first, JSON mirrored)."""
     app_module._db_init()
     app_module._db_populate_from_json_files()
     app_module._load_direct_reports()
@@ -67,15 +67,13 @@ def people_menu():
 
 @app.route("/people/direct-reports")
 def direct_reports_list():
-    file_reports = app_module.direct_reports
     try:
-        db_reports = app_module._db_load_direct_reports()
+        reports = app_module._db_load_direct_reports()
     except Exception:
-        db_reports = []
+        reports = []
     return render_template(
         "direct_reports.html",
-        file_reports=file_reports,
-        db_reports=db_reports,
+        reports=reports,
         columns=app_module._LIST_DIRECT_REPORT_COLUMNS,
         show_generate=app_module.MISTRAL_AVAILABLE and bool(app_module._get_mistral_api_key()),
     )
@@ -130,7 +128,7 @@ def direct_report_delete():
 @app.route("/people/direct-reports/purge", methods=["POST"])
 def direct_reports_purge():
     app_module._delete_all_goals()
-    app_module._delete_employee_comp_statements()
+    app_module._delete_direct_report_comp_statements()
     app_module.direct_reports.clear()
     app_module._save_direct_reports()
     return redirect(url_for("direct_reports_list"))
@@ -154,22 +152,20 @@ def direct_reports_generate():
 
 @app.route("/people/direct-reports/generate_ratings", methods=["POST"])
 def direct_reports_generate_ratings():
-    """Generate employee compensation statements JSON from direct reports."""
-    app_module._generate_employee_comp_statements()
+    """Generate direct report compensation statements from direct reports."""
+    app_module._generate_direct_report_comp_statements()
     return redirect(url_for("direct_reports_list"))
 
 
 # ----- Management tips -----
-# ----- Management tips -----
 
 @app.route("/people/tips")
 def tips_list():
-    file_tips = app_module.management_tips
     try:
-        db_tips = app_module._db_load_management_tips()
+        tips = app_module._db_load_management_tips()
     except Exception:
-        db_tips = []
-    return render_template("tips.html", file_tips=file_tips, db_tips=db_tips)
+        tips = []
+    return render_template("tips.html", tips=tips)
 
 
 # ----- Milestone reminders -----
@@ -178,19 +174,15 @@ def tips_list():
 def milestones():
     days = request.args.get("days", 30, type=int)
     days = max(1, min(365, days))
-    file_reports = app_module.direct_reports
-    file_upcoming = app_module._compute_milestones_from_reports(file_reports, days)
     try:
         db_reports = app_module._db_load_direct_reports()
-        db_upcoming = app_module._compute_milestones_from_reports(db_reports, days)
+        upcoming = app_module._compute_milestones_from_reports(db_reports, days)
     except Exception:
-        db_reports = []
-        db_upcoming = []
+        upcoming = []
     return render_template(
         "milestones.html",
         days=days,
-        file_upcoming=file_upcoming,
-        db_upcoming=db_upcoming,
+        upcoming=upcoming,
     )
 
 
@@ -402,19 +394,17 @@ def goal_generate():
 
 @app.route("/items")
 def comp_items():
-    """Read employee_comp_data.json and render compensation statements."""
-    import os as _os_mod, json as _json_mod
-
-    if not _os_mod.path.isfile(app_module.EMPLOYEE_COMP_DATA_FILE):
-        # If file doesn't exist yet, generate once from current direct reports.
-        app_module._generate_employee_comp_statements()
+    """Load direct report compensation rows from the database and render compensation statements."""
     try:
-        with open(app_module.EMPLOYEE_COMP_DATA_FILE, encoding="utf-8") as f:
-            items = _json_mod.load(f)
-        if not isinstance(items, list):
-            items = []
+        items = app_module._db_load_direct_report_comp_data()
     except Exception:
         items = []
+    if not items and app_module.direct_reports:
+        app_module._generate_direct_report_comp_statements()
+        try:
+            items = app_module._db_load_direct_report_comp_data()
+        except Exception:
+            items = []
     # Build a simple lookup for rating labels
     rating_labels = {
         5: "Exceptional Contribution",
@@ -635,9 +625,42 @@ def goal_remove():
 
 
 # ----- Developer menu (optional) -----
+# Register subpaths before /developer so routing stays unambiguous.
+
+
+@app.route("/developer/schema")
+def developer_schema():
+    """SQLite DDL vs SQLAlchemy models (create_all, get_session)."""
+    schema_pairs: list = []
+    schema_error: str | None = None
+    try:
+        from wingmanem.developer_schema import build_schema_model_pairs
+
+        schema_pairs = build_schema_model_pairs()
+    except ImportError as e:
+        schema_error = str(e)
+    return render_template(
+        "developer_schema.html",
+        schema_pairs=schema_pairs,
+        schema_error=schema_error,
+    )
+
+
+@app.route("/developer/comp-statements", endpoint="developer_comp_statements")
+def developer_comp_statements():
+    """Compensation statements: _db_load_direct_report_comp_data, DirectReportCompDataORM, Jinja."""
+    return render_template("developer_comp_statements.html")
+
+
+@app.route("/developer/direct-reports")
+def developer_direct_reports():
+    """DirectReportORM, _db_load_direct_reports, _db_replace_direct_reports_from_list."""
+    return render_template("developer_direct_reports.html")
+
 
 @app.route("/developer")
 def developer_menu():
+    """Developer hub: ORM models, SQLite schema, direct reports, comp statements."""
     return render_template("developer.html")
 
 

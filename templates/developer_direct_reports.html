@@ -1,0 +1,104 @@
+{% extends "base.html" %}
+{% block title %}Developer — Direct reports{% endblock %}
+
+{% block breadcrumb %}
+  <div class="breadcrumb"><a href="{{ url_for('index') }}">Main</a> → <a href="{{ url_for('developer_menu') }}">Developer</a> → Direct reports</div>
+{% endblock %}
+
+{% block content %}
+  <h2 style="margin-bottom: 1rem;">Direct reports: ORM &amp; SQLite</h2>
+
+  <div class="form-actions" style="margin-bottom: 1.5rem; flex-wrap: wrap; gap: 0.5rem;">
+    <a href="{{ url_for('developer_menu') }}" class="btn">← Developer menu</a>
+    <a href="{{ url_for('developer_schema') }}" class="btn">Schema &amp; models</a>
+    <a href="{{ url_for('developer_comp_statements') }}" class="btn">Comp statements</a>
+  </div>
+
+  <p class="text-muted" style="margin-bottom: 1rem;">Listing uses <code>_db_load_direct_reports()</code>: <code>select(DirectReportORM).order_by(DirectReportORM.id)</code>, each row mapped to the same dict shape the UI expects. Persisting the in-memory list after adds/edits/deletes goes through <code>_db_replace_direct_reports_from_list</code>, which clears <code>direct_reports</code> and re-inserts one <code>DirectReportORM</code> per dict (primary key <code>id</code> preserved).</p>
+
+  <h3 style="margin-top: 1.25rem; font-size: 1.05rem;">Web UI: step by step</h3>
+  <ol style="line-height: 1.6; padding-left: 1.25rem; margin-bottom: 1rem;">
+    <li style="margin-bottom: 1.25rem;">
+      <strong>Route.</strong> User submits the form on POST <code>/people/direct-reports/add</code> (<code>web_app.direct_report_add</code>). GET returns the empty form template.
+      <pre class="code-block" style="margin-top: 0.5rem;">@app.route("/people/direct-reports/add", methods=["GET", "POST"])
+def direct_report_add():
+    if request.method == "GET":
+        return render_template("direct_report_add.html")
+    # POST continues below…</pre>
+    </li>
+    <li style="margin-bottom: 1.25rem;">
+      <strong>Build dict.</strong> Field values are read from <code>request.form</code> into a Python dict with snake_case keys.
+      <pre class="code-block" style="margin-top: 0.5rem;">report = {
+    "id": app_module._next_direct_report_id(),
+    "first_name": request.form.get("first_name", "").strip() or "Unknown",
+    "last_name": request.form.get("last_name", "").strip() or "Unknown",
+    "street_address_1": request.form.get("street_address_1", "").strip() or None,
+    "city": request.form.get("city", "").strip() or None,
+    # … state, zipcode, country, birthday, hire_date, current_role,
+    #   role_start_date, partner_name …
+}</pre>
+    </li>
+    <li style="margin-bottom: 1.25rem;">
+      <strong>ID.</strong> <code>_next_direct_report_id()</code> scans the in-memory list and returns <code>max(id) + 1</code> (invoked as part of the dict above).
+      <pre class="code-block" style="margin-top: 0.5rem;">def _next_direct_report_id() -> int:
+    max_id = 0
+    for r in direct_reports:
+        max_id = max(max_id, int(r.get("id") or 0))
+    return max_id + 1</pre>
+    </li>
+    <li style="margin-bottom: 1.25rem;">
+      <strong>Normalize.</strong> <code>_normalize_direct_report(report)</code> ensures required keys, optional fields, and legacy camelCase aliases.
+      <pre class="code-block" style="margin-top: 0.5rem;">report = app_module._normalize_direct_report(report)</pre>
+    </li>
+    <li style="margin-bottom: 1.25rem;">
+      <strong>Append.</strong> The dict is appended to <code>app_module.direct_reports</code>.
+      <pre class="code-block" style="margin-top: 0.5rem;">app_module.direct_reports.append(report)</pre>
+    </li>
+    <li style="margin-bottom: 1.25rem;">
+      <strong>ORM persist.</strong> <code>_save_direct_reports()</code> invokes <code>_db_replace_direct_reports_from_list(direct_reports)</code>: delete all <code>DirectReportORM</code> rows, insert from dicts, commit.
+      <pre class="code-block" style="margin-top: 0.5rem;">app_module._save_direct_reports()
+
+# _db_replace_direct_reports_from_list (excerpt):
+def _db_replace_direct_reports_from_list(reports: list[dict[str, Any]]) -> None:
+    session = get_session()
+    try:
+        session.execute(delete(DirectReportORM))
+        for r in reports:
+            session.add(
+                DirectReportORM(
+                    id=int(r.get("id") or 0),
+                    first_name=r.get("first_name") or "",
+                    last_name=r.get("last_name") or "",
+                    street_address_1=r.get("street_address_1"),
+                    # … other mapped columns …
+                )
+            )
+        session.commit()
+    finally:
+        session.close()</pre>
+      <p style="margin-top: 0.5rem;"><strong>Model</strong> (<code>wingmanem/orm_models.py</code>):</p>
+      <pre class="code-block">class DirectReportORM(Base):
+    __tablename__ = "direct_reports"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    first_name: Mapped[str] = mapped_column(Text, default="")
+    last_name: Mapped[str] = mapped_column(Text, default="")
+    # Optional: street_address_*, city, state, zipcode, country,
+    # birthday, hire_date, current_role, role_start_date, partner_name</pre>
+    </li>
+    <li style="margin-bottom: 1.25rem;">
+      <strong>List view.</strong> Redirect to <code>/people/direct-reports</code>; rows come from <code>_db_load_direct_reports()</code> (ORM → dicts).
+      <pre class="code-block" style="margin-top: 0.5rem;">return redirect(url_for("direct_reports_list"))
+
+# direct_reports_list()
+reports = app_module._db_load_direct_reports()
+return render_template("direct_reports.html", reports=reports, …)</pre>
+    </li>
+  </ol>
+
+  <h3 style="margin-top: 1.25rem; font-size: 1.05rem;">CLI / AI</h3>
+  <p style="line-height: 1.7; margin-bottom: 0.5rem;">Same ORM path after mutating <code>direct_reports</code>: append then <code>_save_direct_reports()</code> (replace in SQLite).</p>
+  <pre class="code-block">direct_reports.append(report)
+_save_direct_reports()</pre>
+
+  <p style="margin-top: 1.5rem;"><a href="{{ url_for('developer_menu') }}" class="btn">← Developer menu</a></p>
+{% endblock %}

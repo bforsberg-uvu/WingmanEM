@@ -170,6 +170,25 @@ The /view_direct_report_goals should display the goal in a nice tabular format. 
 To implement this chunk, create another area in the application under 'People Management & Coaching' to create direct reports compensation change statements with the following criteria 
 Add Jinja2 to the project.
 Create a Jinja2 template letter for a direct report for their yearly compensation adjustment. This template should allow substitution of name, percentage compensation change, dollar compensation change, bonus amount, and a rating from 5 to 1 with this breakdown:  5 - Exceptional Contribution, 4 - Exceed Expectations,  3 - Meets Expectations,  2 - Missed Expectations,  1 - Needs improvement.    Create a paragraph for each of these rating that will be displayed based on the rating substitution. 
-Add a button under 'Adminster Direct Reports' title 'Generate Employee Ratings' which will create an employee_comp_data.json file from the list of current direct reports and randomly assign a rating (1 to 5) to each employee, a salary, a percentage compensation change, a dollar compensation change which is derived by multiplying the salary by the percentage compensation change and adding it to the original salary, a random bonus amount ranging from $10000 to $30000 which is reflective of the rating recieved. Each time the button is pressed regenerate the file.
-Create a route called '/items' which is reached by pressing the 'Generate Direct Report Comp Statements' that handles a get request and reads in and parses all the data from the employee_comp_data.json file into a dictionary and then uses a for loop in the template letter created earlier to generate compensation statement for each of the direct reports. 
+Add a button under 'Adminster Direct Reports' title 'Generate Direct Report Ratings' which will create a direct_report_comp_data.json file from the list of current direct reports and randomly assign a rating (1 to 5) to each direct report, a salary, a percentage compensation change, a dollar compensation change which is derived by multiplying the salary by the percentage compensation change and adding it to the original salary, a random bonus amount ranging from $10000 to $30000 which is reflective of the rating recieved. Each time the button is pressed regenerate the file.
+Create a route called '/items' which is reached by pressing the 'Generate Direct Report Comp Statements' that handles a get request and reads in and parses all the data from the direct_report_comp_data.json file into a dictionary and then uses a for loop in the template letter created earlier to generate compensation statement for each of the direct reports. 
 The compensation statements should be presented to the user in a tabular format allow them to open each one individually. 
+
+### Chunk #7:
+To implement this chunk refactor all the database functionality in the app to use SQLAlchemy with SQLite with the following criteria.
+Generate SQLAlchemy models for all existing database tables.
+Refactor the app to utilize SQLAlchemy models and sql queries to perform all database operations including add, list, remove items, etc. 
+Add a section to the developer menu which will show the user the various database table definitions and the associated SQLAlchemy models side by side in a easy to read format that is consistent with the rest of the app.
+Add a section the developer menu that shows step by step how Direct report comp statements are generated using sql, sqlalchemy models and jinja templates. Include appropriate code examples of queries, models and templates to aid in understanding
+Add another seection that show step by step how direct report ratings are generated using sql, sqlalchemy models and jinja templates. Include appropriate code examples of queries, models and templates to aid in understanding
+Continue to keep json file and the database in sync.
+Remove the json file comparison sections from the app just keeping the database sections. 
+
+### Chunk #8:
+To implement this chunk add edit and delete functionality for direct reports with the following criteria
+Create a route /edit/<item_id> where item_id represent the id of the direct report.
+Create an 'Edit' Button for each direct report record in the direct report table which routes the user to the edit route specified above.
+When the user goes to the edit route a form similar to the one that is used to add a direct report is displayed populated with the coresponding direct report's data.
+The user can edit this data and save the changes.
+Refactor the functionality to delete a direct report so that when the delete button is pressed the user is taken to a /delete/<item_id> route where item_id represents the direct report being deleted.
+A confirmation dialog should be displayed to make sure the user want to do the delete.  If the user confirms the direct report is deleted and the user is returned to the table view of direct report otherwise the user is just returned to the table view of direct reports.

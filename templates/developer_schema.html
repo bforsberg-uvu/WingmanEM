@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% block title %}Developer — Schema &amp; models{% endblock %}
+
+{% block breadcrumb %}
+  <div class="breadcrumb"><a href="{{ url_for('index') }}">Main</a> → <a href="{{ url_for('developer_menu') }}">Developer</a> → Schema &amp; models</div>
+{% endblock %}
+
+{% block content %}
+  <h2 style="margin-bottom: 1rem;">Database schema &amp; SQLAlchemy models</h2>
+
+  <div class="form-actions" style="margin-bottom: 1.5rem; flex-wrap: wrap; gap: 0.5rem;">
+    <a href="{{ url_for('developer_menu') }}" class="btn">← Developer menu</a>
+    <a href="{{ url_for('developer_direct_reports') }}" class="btn">Direct reports</a>
+    <a href="{{ url_for('developer_comp_statements') }}" class="btn">Comp statements</a>
+  </div>
+
+  {% if schema_error %}
+  <p class="text-muted" style="margin-bottom: 1rem;">Could not load ORM documentation (install dependencies: <code>pip install -r requirements.txt</code>). {{ schema_error }}</p>
+  {% endif %}
+
+  <p class="text-muted" style="margin-bottom: 1rem;">Tables are created via <code>Base.metadata.create_all()</code> after any SQLite legacy renames (see <code>wingmanem/database.py</code>). Application code opens a scoped session with <code>get_session()</code>, runs <code>select()</code> / <code>delete()</code> / <code>add()</code> / <code>commit()</code> on these mapped classes. Bulk rewrites use <code>_db_replace_*_from_list</code> helpers in <code>wingmanem/app.py</code> (delete all rows for that entity, insert one ORM instance per in-memory dict).</p>
+
+  {% for pair in schema_pairs %}
+  <h3 style="margin-top: 1.25rem; font-size: 1.05rem;">{{ pair.title }}</h3>
+  <div class="dev-two-col" style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; align-items: start;">
+    <div>
+      <div class="section-title" style="font-size: 0.85rem;">SQLite DDL (reference)</div>
+      <pre class="code-block" style="max-height: 28rem; overflow: auto;">{{ pair.sql }}</pre>
+    </div>
+    <div>
+      <div class="section-title" style="font-size: 0.85rem;">SQLAlchemy model (<code>wingmanem/orm_models.py</code>)</div>
+      <pre class="code-block" style="max-height: 28rem; overflow: auto;">{{ pair.model_py }}</pre>
+    </div>
+  </div>
+  {% endfor %}
+
+  <p style="margin-top: 1.5rem;"><a href="{{ url_for('developer_menu') }}" class="btn">← Developer menu</a></p>
+{% endblock %}

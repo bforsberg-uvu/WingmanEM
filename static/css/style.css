@@ -394,6 +394,12 @@ form select:focus {
   color: var(--text-primary);
 }
 
+@media (max-width: 900px) {
+  .dev-two-col {
+    grid-template-columns: 1fr !important;
+  }
+}
+
 .code-block {
   background: var(--bg-card);
   border: 1px solid var(--border);

@@ -1,0 +1,86 @@
+{% extends "base.html" %}
+{% block title %}Developer — Compensation statements{% endblock %}
+
+{% block breadcrumb %}
+  <div class="breadcrumb"><a href="{{ url_for('index') }}">Main</a> → <a href="{{ url_for('developer_menu') }}">Developer</a> → Compensation statements</div>
+{% endblock %}
+
+{% block content %}
+  <h2 style="margin-bottom: 1rem;">Compensation statements (ORM reads + Jinja)</h2>
+
+  <p class="text-muted" style="margin-bottom: 1rem;"><code>/items</code> loads rows via <code>_db_load_direct_report_comp_data()</code> (<code>select(DirectReportCompDataORM)</code>, ordered by <code>direct_report_id</code>). If the query returns no rows but <code>direct_reports</code> is non-empty, it calls <code>_generate_direct_report_comp_statements()</code>, which repopulates the table through <code>_db_replace_direct_report_comp_data_from_list</code>, then loads again.</p>
+
+  <div class="form-actions" style="margin-bottom: 1.5rem; flex-wrap: wrap; gap: 0.5rem;">
+    <a href="{{ url_for('developer_menu') }}" class="btn">← Developer menu</a>
+    <a href="{{ url_for('developer_schema') }}" class="btn">Schema &amp; models</a>
+    <a href="{{ url_for('developer_direct_reports') }}" class="btn">Direct reports</a>
+  </div>
+
+  <ol style="line-height: 1.6; padding-left: 1.25rem; margin-bottom: 1rem;">
+    <li style="margin-bottom: 1.25rem;">
+      <strong>Trigger.</strong> GET <code>/items</code> → <code>comp_items</code>.
+      <pre class="code-block" style="margin-top: 0.5rem;">@app.route("/items")
+def comp_items():
+    …</pre>
+    </li>
+    <li style="margin-bottom: 1.25rem;">
+      <strong>ORM load (and optional generate).</strong>
+      <pre class="code-block" style="margin-top: 0.5rem;">items = app_module._db_load_direct_report_comp_data()
+if not items and app_module.direct_reports:
+    app_module._generate_direct_report_comp_statements()
+    items = app_module._db_load_direct_report_comp_data()
+
+return render_template(
+    "comp_items.html",
+    items=items,
+    rating_labels={...},
+    selected_item=...,
+    selected_report_id=...,
+)</pre>
+    </li>
+    <li style="margin-bottom: 1.25rem;">
+      <strong>Model.</strong> Rows map to <code>DirectReportCompDataORM</code> (<code>direct_report_comp_data</code>); dicts passed to templates use the same keys as loaded columns.
+      <pre class="code-block" style="margin-top: 0.5rem;">class DirectReportCompDataORM(Base):
+    __tablename__ = "direct_report_comp_data"
+    direct_report_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    first_name: Mapped[str] = mapped_column(Text, default="")
+    last_name: Mapped[str] = mapped_column(Text, default="")
+    rating: Mapped[int] = mapped_column(Integer, nullable=False)
+    salary: Mapped[int] = mapped_column(Integer, nullable=False)
+    percent_change: Mapped[float] = mapped_column(Float, nullable=False)
+    dollar_change: Mapped[int] = mapped_column(Integer, nullable=False)
+    new_salary: Mapped[int] = mapped_column(Integer, nullable=False)
+    bonus: Mapped[int] = mapped_column(Integer, nullable=False)</pre>
+    </li>
+    <li style="margin-bottom: 1.25rem;">
+      <strong>Template loop.</strong> <code>templates/comp_items.html</code> iterates <code>items</code>; each dict matches the shape from <code>DirectReportCompDataORM</code>.
+      {% raw %}
+      <pre class="code-block" style="margin-top: 0.5rem;">{# comp_items.html (excerpt) #}
+{% for s in items %}
+  {% set item = s %}
+  <tr>...<td>{{ item.percent_change }}%</td>...</tr>
+{% endfor %}
+
+{% include "comp_letter.html" %}</pre>
+      {% endraw %}
+    </li>
+    <li style="margin-bottom: 1.25rem;">
+      <strong>Letter template.</strong> <code>comp_items.html</code> sets <code>{% raw %}{% set item = selected_item %}{% endraw %}</code> before <code>{% raw %}{% include "comp_letter.html" %}{% endraw %}</code>. The letter uses <code>item</code> for amounts and branches on <code>item.rating</code> (1–5).
+      {% raw %}
+      <pre class="code-block" style="margin-top: 0.5rem;">{# comp_letter.html (excerpt) #}
+{% set full_name = item.first_name ~ ' ' ~ item.last_name %}
+<p>Dear {{ full_name }},</p>
+<p>Your current base salary is <strong>${{ '%.0f'|format(item.salary) }}</strong>…</p>
+{% if item.rating == 5 %}
+<p>Your overall performance rating … <strong>5 — Exceptional Contribution</strong>…</p>
+{% elif item.rating == 4 %}
+…
+{% endif %}</pre>
+      {% endraw %}
+    </li>
+  </ol>
+
+  <p class="text-muted" style="margin-top: 1rem;">For custom reporting, use <code>select(DirectReportCompDataORM)</code> with <code>get_session()</code> the same way <code>_db_load_direct_report_comp_data</code> does.</p>
+
+  <p style="margin-top: 1.5rem;"><a href="{{ url_for('developer_menu') }}" class="btn">← Developer menu</a></p>
+{% endblock %}

@@ -6,7 +6,7 @@ Menu-driven app: direct reports, management tips (Mistral AI), milestone reminde
 
 Sections (in order):
   1. Configuration & constants (paths, globals, ANSI)
-  2. Database (SQLite init, sync, load for direct_reports, management_tips, one_to_one)
+  2. Database (SQLAlchemy + SQLite init; JSON mirror writes; load prefers DB, JSON migrates empty tables)
   3. Utilities (config, I/O, menu box & submenu)
   4. Direct reports (model, load/save, list/add/delete/generate/purge)
   5. Management tips (load/save, daily tip from Mistral, view by date)
@@ -21,7 +21,6 @@ import getpass
 import json
 import os
 import random
-import sqlite3
 import sys
 from collections.abc import Callable
 from datetime import date, datetime
@@ -53,7 +52,11 @@ management_tips: list[dict[str, str]] = []
 DIRECT_REPORTS_FILE = "direct_reports.json"
 MANAGEMENT_TIPS_FILE = "management_tips.json"
 DIRECT_REPORT_GOALS_FILE = "direct_report_goals.json"
-EMPLOYEE_COMP_DATA_FILE = "employee_comp_data.json"
+DIRECT_REPORT_COMP_DATA_FILE = "direct_report_comp_data.json"
+# Legacy filename (migrated on startup)
+LEGACY_DIRECT_REPORT_COMP_DATA_FILE = "employee_comp_data.json"
+# Backward-compatible alias
+EMPLOYEE_COMP_DATA_FILE = DIRECT_REPORT_COMP_DATA_FILE
 DATABASE_PATH = "wingmanem.db"
 
 # ANSI colors for menu items
@@ -65,173 +68,208 @@ _MENU_BOLD = "\033[1m"
 
 
 # ============================================================================
-# DATABASE — SQLite (tables: direct_reports, management_tips, one_to_one_summaries)
+# DATABASE — SQLAlchemy + SQLite (see orm_models.py for table definitions)
 # ============================================================================
 
 _db_available: bool = True  # Set False if DB file missing or init fails; app runs without DB.
 
 
-def _db_connection() -> sqlite3.Connection:
-    """Return a connection to the SQLite database. SQLite creates the file if not present."""
-    return sqlite3.connect(DATABASE_PATH)
+def _write_direct_reports_json_file(reports: list[dict[str, Any]]) -> None:
+    """Persist direct reports list to JSON (mirror of DB; same shape as historical file)."""
+    try:
+        with open(DIRECT_REPORTS_FILE, "w", encoding="utf-8") as f:
+            json.dump(reports, f, indent=2)
+    except OSError as e:
+        print(f"Could not write {DIRECT_REPORTS_FILE}: {e}", file=sys.stderr)
+
+
+def _write_management_tips_json_file(tips: list[dict[str, str]]) -> None:
+    try:
+        with open(MANAGEMENT_TIPS_FILE, "w", encoding="utf-8") as f:
+            json.dump(tips, f, indent=2)
+    except OSError as e:
+        print(f"Could not write {MANAGEMENT_TIPS_FILE}: {e}", file=sys.stderr)
+
+
+def _write_direct_report_goals_json_file(goals: list[dict[str, Any]]) -> None:
+    try:
+        with open(DIRECT_REPORT_GOALS_FILE, "w", encoding="utf-8") as f:
+            json.dump(goals, f, indent=2)
+    except OSError as e:
+        print(f"Could not write {DIRECT_REPORT_GOALS_FILE}: {e}", file=sys.stderr)
+
+
+def _write_direct_report_comp_data_json_file(records: list[dict[str, Any]]) -> None:
+    try:
+        with open(DIRECT_REPORT_COMP_DATA_FILE, "w", encoding="utf-8") as f:
+            json.dump(records, f, indent=2)
+    except OSError as e:
+        print(f"Could not write {DIRECT_REPORT_COMP_DATA_FILE}: {e}", file=sys.stderr)
 
 
 def _db_init() -> None:
-    """Create database and tables if they do not exist. Handles missing DB file (SQLite creates it)."""
+    """Create database file and tables via SQLAlchemy ORM metadata."""
     global _db_available
     try:
-        conn = _db_connection()
-        try:
-            conn.execute("""
-                CREATE TABLE IF NOT EXISTS direct_reports (
-                    id INTEGER PRIMARY KEY,
-                    first_name TEXT,
-                    last_name TEXT,
-                    street_address_1 TEXT,
-                    street_address_2 TEXT,
-                    city TEXT,
-                    state TEXT,
-                    zipcode TEXT,
-                    country TEXT,
-                    birthday TEXT,
-                    hire_date TEXT,
-                    current_role TEXT,
-                    role_start_date TEXT,
-                    partner_name TEXT
-                )
-            """)
-            conn.execute("""
-                CREATE TABLE IF NOT EXISTS management_tips (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    date TEXT NOT NULL,
-                    text TEXT NOT NULL
-                )
-            """)
-            conn.execute("""
-                CREATE TABLE IF NOT EXISTS one_to_one_summaries (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    direct_report_id INTEGER NOT NULL,
-                    date TEXT NOT NULL,
-                    response_text TEXT NOT NULL
-                )
-            """)
-            conn.execute("""
-                CREATE TABLE IF NOT EXISTS direct_report_goals (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    direct_report_id INTEGER NOT NULL,
-                    goal_title TEXT,
-                    goal_description TEXT,
-                    goal_completion_date TEXT
-                )
-            """)
-            conn.commit()
-        finally:
-            conn.close()
-    except (sqlite3.Error, OSError) as e:
+        from wingmanem.database import init_engine
+
+        _db_available = init_engine(DATABASE_PATH)
+        if not _db_available:
+            print("Database unavailable (will run without DB): init_engine returned False", file=sys.stderr)
+    except Exception as e:
         _db_available = False
         print(f"Database unavailable (will run without DB): {e}", file=sys.stderr)
 
 
-def _db_sync_direct_reports_from_list(reports: list[dict[str, Any]]) -> None:
-    """Replace direct_reports table content with the given list (keeps file and DB in sync)."""
+def _db_replace_direct_reports_from_list(reports: list[dict[str, Any]]) -> None:
+    """Replace direct_reports table with the given list (same scope as rewriting direct_reports.json)."""
     if not _db_available:
         return
-    conn = _db_connection()
+    from sqlalchemy import delete
+
+    from wingmanem.database import get_session
+    from wingmanem.orm_models import DirectReportORM
+
+    session = get_session()
     try:
-        conn.execute("DELETE FROM direct_reports")
+        session.execute(delete(DirectReportORM))
         for r in reports:
-            conn.execute(
-                """INSERT INTO direct_reports (
-                    id, first_name, last_name, street_address_1, street_address_2,
-                    city, state, zipcode, country, birthday, hire_date, current_role,
-                    role_start_date, partner_name
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                (
-                    r.get("id"),
-                    r.get("first_name") or "",
-                    r.get("last_name") or "",
-                    r.get("street_address_1"),
-                    r.get("street_address_2"),
-                    r.get("city"),
-                    r.get("state"),
-                    r.get("zipcode"),
-                    r.get("country"),
-                    r.get("birthday"),
-                    r.get("hire_date"),
-                    r.get("current_role"),
-                    r.get("role_start_date"),
-                    r.get("partner_name"),
-                ),
+            session.add(
+                DirectReportORM(
+                    id=int(r.get("id") or 0),
+                    first_name=r.get("first_name") or "",
+                    last_name=r.get("last_name") or "",
+                    street_address_1=r.get("street_address_1"),
+                    street_address_2=r.get("street_address_2"),
+                    city=r.get("city"),
+                    state=r.get("state"),
+                    zipcode=r.get("zipcode"),
+                    country=r.get("country"),
+                    birthday=r.get("birthday"),
+                    hire_date=r.get("hire_date"),
+                    current_role=r.get("current_role"),
+                    role_start_date=r.get("role_start_date"),
+                    partner_name=r.get("partner_name"),
+                )
             )
-        conn.commit()
+        session.commit()
+    except Exception:
+        session.rollback()
+        raise
     finally:
-        conn.close()
+        session.close()
 
 
-def _db_sync_management_tips_from_list(tips: list[dict[str, str]]) -> None:
-    """Replace management_tips table content with the given list (keeps file and DB in sync)."""
+def _db_replace_management_tips_from_list(tips: list[dict[str, str]]) -> None:
+    """Replace management_tips table with the given list (same scope as rewriting management_tips.json)."""
     if not _db_available:
         return
-    conn = _db_connection()
+    from sqlalchemy import delete
+
+    from wingmanem.database import get_session
+    from wingmanem.orm_models import ManagementTipORM
+
+    session = get_session()
     try:
-        conn.execute("DELETE FROM management_tips")
+        session.execute(delete(ManagementTipORM))
         for t in tips:
-            conn.execute(
-                "INSERT INTO management_tips (date, text) VALUES (?, ?)",
-                (t.get("date") or "", t.get("text") or ""),
+            session.add(
+                ManagementTipORM(
+                    date=t.get("date") or "",
+                    text=t.get("text") or "",
+                )
             )
-        conn.commit()
+        session.commit()
+    except Exception:
+        session.rollback()
+        raise
     finally:
-        conn.close()
+        session.close()
 
 
 def _db_load_direct_reports() -> list[dict[str, Any]]:
     """Load all direct reports from the database as list of dicts (same keys as JSON)."""
     if not _db_available:
         return []
-    conn = _db_connection()
+    from sqlalchemy import select
+
+    from wingmanem.database import get_session
+    from wingmanem.orm_models import DirectReportORM
+
+    session = get_session()
     try:
-        conn.row_factory = sqlite3.Row
-        cur = conn.execute(
-            """SELECT id, first_name, last_name, street_address_1, street_address_2,
-               city, state, zipcode, country, birthday, hire_date, current_role,
-               role_start_date, partner_name FROM direct_reports ORDER BY id"""
-        )
-        rows = cur.fetchall()
-        return [_normalize_direct_report(dict(row)) for row in rows]
+        rows = session.scalars(select(DirectReportORM).order_by(DirectReportORM.id)).all()
+        out = []
+        for row in rows:
+            out.append(
+                _normalize_direct_report(
+                    {
+                        "id": row.id,
+                        "first_name": row.first_name,
+                        "last_name": row.last_name,
+                        "street_address_1": row.street_address_1,
+                        "street_address_2": row.street_address_2,
+                        "city": row.city,
+                        "state": row.state,
+                        "zipcode": row.zipcode,
+                        "country": row.country,
+                        "birthday": row.birthday,
+                        "hire_date": row.hire_date,
+                        "current_role": row.current_role,
+                        "role_start_date": row.role_start_date,
+                        "partner_name": row.partner_name,
+                    }
+                )
+            )
+        return out
     finally:
-        conn.close()
+        session.close()
 
 
 def _db_load_management_tips() -> list[dict[str, str]]:
     """Load all management tips from the database as list of dicts with date and text."""
     if not _db_available:
         return []
-    conn = _db_connection()
+    from sqlalchemy import select
+
+    from wingmanem.database import get_session
+    from wingmanem.orm_models import ManagementTipORM
+
+    session = get_session()
     try:
-        conn.row_factory = sqlite3.Row
-        cur = conn.execute("SELECT date, text FROM management_tips ORDER BY id")
-        rows = cur.fetchall()
-        return [{"date": row[0], "text": row[1]} for row in rows]
+        rows = session.scalars(select(ManagementTipORM).order_by(ManagementTipORM.id)).all()
+        return [{"date": row.date, "text": row.text} for row in rows]
     finally:
-        conn.close()
+        session.close()
+
+
+def _migrate_direct_report_comp_json_file() -> None:
+    """Rename legacy comp JSON to the current filename if needed."""
+    legacy = LEGACY_DIRECT_REPORT_COMP_DATA_FILE
+    current = DIRECT_REPORT_COMP_DATA_FILE
+    if os.path.isfile(legacy) and not os.path.isfile(current):
+        try:
+            os.replace(legacy, current)
+        except OSError:
+            pass
 
 
 def _db_populate_from_json_files() -> None:
-    """Populate database tables from JSON files if the files exist. Called at startup."""
+    """Seed SQLite from JSON only when the corresponding table is empty (migration / first run)."""
     if not _db_available:
         return
-    if os.path.isfile(DIRECT_REPORTS_FILE):
+    _migrate_direct_report_comp_json_file()
+    if not _db_load_direct_reports() and os.path.isfile(DIRECT_REPORTS_FILE):
         try:
             with open(DIRECT_REPORTS_FILE, encoding="utf-8") as f:
                 data = json.load(f)
             raw = data if isinstance(data, list) else []
             reports = [_normalize_direct_report(r) for r in raw if isinstance(r, dict)]
             if reports:
-                _db_sync_direct_reports_from_list(reports)
+                _db_replace_direct_reports_from_list(reports)
         except (json.JSONDecodeError, OSError):
             pass
-    if os.path.isfile(MANAGEMENT_TIPS_FILE):
+    if not _db_load_management_tips() and os.path.isfile(MANAGEMENT_TIPS_FILE):
         try:
             with open(MANAGEMENT_TIPS_FILE, encoding="utf-8") as f:
                 data = json.load(f)
@@ -243,14 +281,39 @@ def _db_populate_from_json_files() -> None:
                     elif isinstance(item, str) and item.strip():
                         tips.append({"date": date.today().isoformat(), "text": item.strip()})
             if tips:
-                _db_sync_management_tips_from_list(tips)
+                _db_replace_management_tips_from_list(tips)
         except (json.JSONDecodeError, OSError):
             pass
-    if os.path.isfile(DIRECT_REPORT_GOALS_FILE):
+    if not _db_load_all_goals() and os.path.isfile(DIRECT_REPORT_GOALS_FILE):
         try:
-            goals = _load_direct_report_goals()
+            with open(DIRECT_REPORT_GOALS_FILE, encoding="utf-8") as f:
+                data = json.load(f)
+            raw = data if isinstance(data, list) else []
+            goals: list[dict[str, Any]] = []
+            for g in raw:
+                if isinstance(g, dict) and g.get("direct_report_id") is not None:
+                    goals.append({
+                        "id": g.get("id"),
+                        "direct_report_id": int(g["direct_report_id"]),
+                        "goal_title": str(g.get("goal_title") or "")[:50],
+                        "goal_description": str(g.get("goal_description") or "")[:100],
+                        "goal_completion_date": str(g.get("goal_completion_date") or "")[:10],
+                    })
             if goals:
-                _db_sync_goals_from_list(goals)
+                _db_replace_goals_from_list(goals)
+        except (json.JSONDecodeError, OSError):
+            pass
+    comp_json = (
+        DIRECT_REPORT_COMP_DATA_FILE
+        if os.path.isfile(DIRECT_REPORT_COMP_DATA_FILE)
+        else LEGACY_DIRECT_REPORT_COMP_DATA_FILE
+    )
+    if not _db_load_direct_report_comp_data() and os.path.isfile(comp_json):
+        try:
+            with open(comp_json, encoding="utf-8") as f:
+                data = json.load(f)
+            if isinstance(data, list) and data:
+                _db_replace_direct_report_comp_data_from_list(data)
         except (json.JSONDecodeError, OSError):
             pass
 
@@ -259,170 +322,362 @@ def _db_insert_one_to_one_summary(direct_report_id: int, date_str: str, response
     """Store a 1:1 summary for a direct report and date."""
     if not _db_available:
         return
-    conn = _db_connection()
+    from wingmanem.database import get_session
+    from wingmanem.orm_models import OneToOneSummaryORM
+
+    session = get_session()
     try:
-        conn.execute(
-            "INSERT INTO one_to_one_summaries (direct_report_id, date, response_text) VALUES (?, ?, ?)",
-            (direct_report_id, date_str, response_text),
+        session.add(
+            OneToOneSummaryORM(
+                direct_report_id=direct_report_id,
+                date=date_str,
+                response_text=response_text,
+            )
         )
-        conn.commit()
+        session.commit()
+    except Exception:
+        session.rollback()
+        raise
     finally:
-        conn.close()
+        session.close()
 
 
 def _db_get_one_to_one_summaries(direct_report_id: int) -> list[dict[str, Any]]:
     """Get all 1:1 summaries for a direct report, sorted by date (oldest first)."""
     if not _db_available:
         return []
-    conn = _db_connection()
+    from sqlalchemy import select
+
+    from wingmanem.database import get_session
+    from wingmanem.orm_models import OneToOneSummaryORM
+
+    session = get_session()
     try:
-        cur = conn.execute(
-            "SELECT id, direct_report_id, date, response_text FROM one_to_one_summaries WHERE direct_report_id = ? ORDER BY date",
-            (direct_report_id,),
-        )
-        rows = cur.fetchall()
-        return [{"id": r[0], "direct_report_id": r[1], "date": r[2], "response_text": r[3]} for r in rows]
+        rows = session.scalars(
+            select(OneToOneSummaryORM)
+            .where(OneToOneSummaryORM.direct_report_id == direct_report_id)
+            .order_by(OneToOneSummaryORM.date)
+        ).all()
+        return [
+            {
+                "id": row.id,
+                "direct_report_id": row.direct_report_id,
+                "date": row.date,
+                "response_text": row.response_text,
+            }
+            for row in rows
+        ]
     finally:
-        conn.close()
+        session.close()
 
 
 def _db_delete_one_to_one_by_report_and_date(direct_report_id: int, date_str: str) -> bool:
     """Delete the 1:1 summary for a direct report on a specific date. Returns True if a row was deleted."""
     if not _db_available:
         return False
-    conn = _db_connection()
+    from sqlalchemy import delete
+
+    from wingmanem.database import get_session
+    from wingmanem.orm_models import OneToOneSummaryORM
+
+    session = get_session()
     try:
-        cur = conn.execute(
-            "DELETE FROM one_to_one_summaries WHERE direct_report_id = ? AND date = ?",
-            (direct_report_id, date_str),
+        res = session.execute(
+            delete(OneToOneSummaryORM).where(
+                OneToOneSummaryORM.direct_report_id == direct_report_id,
+                OneToOneSummaryORM.date == date_str,
+            )
         )
-        conn.commit()
-        return cur.rowcount > 0
+        session.commit()
+        return res.rowcount > 0
+    except Exception:
+        session.rollback()
+        raise
     finally:
-        conn.close()
+        session.close()
 
 
 def _db_purge_one_to_one_for_report(direct_report_id: int) -> int:
     """Delete all 1:1 summaries for a direct report. Returns number of rows deleted."""
     if not _db_available:
         return 0
-    conn = _db_connection()
+    from sqlalchemy import delete
+
+    from wingmanem.database import get_session
+    from wingmanem.orm_models import OneToOneSummaryORM
+
+    session = get_session()
     try:
-        cur = conn.execute("DELETE FROM one_to_one_summaries WHERE direct_report_id = ?", (direct_report_id,))
-        conn.commit()
-        return cur.rowcount
+        res = session.execute(delete(OneToOneSummaryORM).where(OneToOneSummaryORM.direct_report_id == direct_report_id))
+        session.commit()
+        return res.rowcount
+    except Exception:
+        session.rollback()
+        raise
     finally:
-        conn.close()
+        session.close()
 
 
 # ----- Direct report goals (Chunk #5) -----
+
 
 def _db_insert_goal(direct_report_id: int, goal_title: str, goal_description: str, goal_completion_date: str | None) -> int:
     """Insert a goal; returns the new row id."""
     if not _db_available:
         return 0
-    conn = _db_connection()
+    from wingmanem.database import get_session
+    from wingmanem.orm_models import DirectReportGoalORM
+
+    session = get_session()
     try:
-        cur = conn.execute(
-            """INSERT INTO direct_report_goals (direct_report_id, goal_title, goal_description, goal_completion_date)
-               VALUES (?, ?, ?, ?)""",
-            (direct_report_id, goal_title or "", goal_description or "", goal_completion_date or ""),
+        row = DirectReportGoalORM(
+            direct_report_id=direct_report_id,
+            goal_title=goal_title or "",
+            goal_description=goal_description or "",
+            goal_completion_date=goal_completion_date or "",
         )
-        conn.commit()
-        return cur.lastrowid or 0
+        session.add(row)
+        session.flush()
+        new_id = int(row.id)
+        session.commit()
+        return new_id
+    except Exception:
+        session.rollback()
+        raise
     finally:
-        conn.close()
+        session.close()
 
 
 def _db_load_all_goals() -> list[dict[str, Any]]:
     """Load all goals from the database."""
     if not _db_available:
         return []
-    conn = _db_connection()
+    from sqlalchemy import select
+
+    from wingmanem.database import get_session
+    from wingmanem.orm_models import DirectReportGoalORM
+
+    session = get_session()
     try:
-        cur = conn.execute(
-            "SELECT id, direct_report_id, goal_title, goal_description, goal_completion_date FROM direct_report_goals ORDER BY direct_report_id, id"
-        )
+        rows = session.scalars(
+            select(DirectReportGoalORM).order_by(DirectReportGoalORM.direct_report_id, DirectReportGoalORM.id)
+        ).all()
         return [
-            {"id": r[0], "direct_report_id": r[1], "goal_title": r[2], "goal_description": r[3], "goal_completion_date": r[4]}
-            for r in cur.fetchall()
+            {
+                "id": row.id,
+                "direct_report_id": row.direct_report_id,
+                "goal_title": row.goal_title,
+                "goal_description": row.goal_description,
+                "goal_completion_date": row.goal_completion_date,
+            }
+            for row in rows
         ]
     finally:
-        conn.close()
+        session.close()
 
 
 def _db_load_goals_for_report(direct_report_id: int) -> list[dict[str, Any]]:
     """Load goals for a specific direct report."""
     if not _db_available:
         return []
-    conn = _db_connection()
+    from sqlalchemy import select
+
+    from wingmanem.database import get_session
+    from wingmanem.orm_models import DirectReportGoalORM
+
+    session = get_session()
     try:
-        cur = conn.execute(
-            "SELECT id, direct_report_id, goal_title, goal_description, goal_completion_date FROM direct_report_goals WHERE direct_report_id = ? ORDER BY id",
-            (direct_report_id,),
-        )
+        rows = session.scalars(
+            select(DirectReportGoalORM)
+            .where(DirectReportGoalORM.direct_report_id == direct_report_id)
+            .order_by(DirectReportGoalORM.id)
+        ).all()
         return [
-            {"id": r[0], "direct_report_id": r[1], "goal_title": r[2], "goal_description": r[3], "goal_completion_date": r[4]}
-            for r in cur.fetchall()
+            {
+                "id": row.id,
+                "direct_report_id": row.direct_report_id,
+                "goal_title": row.goal_title,
+                "goal_description": row.goal_description,
+                "goal_completion_date": row.goal_completion_date,
+            }
+            for row in rows
         ]
     finally:
-        conn.close()
+        session.close()
 
 
 def _db_delete_goals_for_report(direct_report_id: int) -> int:
     """Delete all goals for a direct report. Returns number deleted."""
     if not _db_available:
         return 0
-    conn = _db_connection()
+    from sqlalchemy import delete
+
+    from wingmanem.database import get_session
+    from wingmanem.orm_models import DirectReportGoalORM
+
+    session = get_session()
     try:
-        cur = conn.execute("DELETE FROM direct_report_goals WHERE direct_report_id = ?", (direct_report_id,))
-        conn.commit()
-        return cur.rowcount
+        res = session.execute(delete(DirectReportGoalORM).where(DirectReportGoalORM.direct_report_id == direct_report_id))
+        session.commit()
+        return res.rowcount
+    except Exception:
+        session.rollback()
+        raise
     finally:
-        conn.close()
+        session.close()
 
 
 def _db_delete_goal_by_id(goal_id: int) -> bool:
     """Delete a goal by id. Returns True if deleted."""
     if not _db_available:
         return False
-    conn = _db_connection()
+    from sqlalchemy import delete
+
+    from wingmanem.database import get_session
+    from wingmanem.orm_models import DirectReportGoalORM
+
+    session = get_session()
     try:
-        cur = conn.execute("DELETE FROM direct_report_goals WHERE id = ?", (goal_id,))
-        conn.commit()
-        return cur.rowcount > 0
+        res = session.execute(delete(DirectReportGoalORM).where(DirectReportGoalORM.id == goal_id))
+        session.commit()
+        return res.rowcount > 0
+    except Exception:
+        session.rollback()
+        raise
     finally:
-        conn.close()
+        session.close()
 
 
-def _db_sync_goals_from_list(goals: list[dict[str, Any]]) -> None:
-    """Replace direct_report_goals table with the given list."""
+def _db_replace_goals_from_list(goals: list[dict[str, Any]]) -> None:
+    """Replace direct_report_goals table with the given list (same scope as rewriting goals JSON)."""
     if not _db_available:
         return
-    conn = _db_connection()
+    from sqlalchemy import delete
+
+    from wingmanem.database import get_session
+    from wingmanem.orm_models import DirectReportGoalORM
+
+    session = get_session()
     try:
-        conn.execute("DELETE FROM direct_report_goals")
+        session.execute(delete(DirectReportGoalORM))
         for g in goals:
-            conn.execute(
-                """INSERT INTO direct_report_goals (id, direct_report_id, goal_title, goal_description, goal_completion_date)
-                   VALUES (?, ?, ?, ?, ?)""",
-                (
-                    g.get("id"),
-                    g.get("direct_report_id"),
-                    g.get("goal_title") or "",
-                    g.get("goal_description") or "",
-                    g.get("goal_completion_date") or "",
-                ),
+            session.add(
+                DirectReportGoalORM(
+                    id=int(g.get("id") or 0),
+                    direct_report_id=int(g.get("direct_report_id") or 0),
+                    goal_title=g.get("goal_title") or "",
+                    goal_description=g.get("goal_description") or "",
+                    goal_completion_date=g.get("goal_completion_date") or "",
+                )
             )
-        conn.commit()
+        session.commit()
+    except Exception:
+        session.rollback()
+        raise
     finally:
-        conn.close()
+        session.close()
+
+
+def _db_load_direct_report_comp_data() -> list[dict[str, Any]]:
+    """Load all rows from direct-report comp data as dicts (shape used by comp letter templates)."""
+    if not _db_available:
+        return []
+    from sqlalchemy import select
+
+    from wingmanem.database import get_session
+    from wingmanem.orm_models import DirectReportCompDataORM
+
+    session = get_session()
+    try:
+        rows = session.scalars(
+            select(DirectReportCompDataORM).order_by(DirectReportCompDataORM.direct_report_id)
+        ).all()
+        return [
+            {
+                "direct_report_id": row.direct_report_id,
+                "first_name": row.first_name,
+                "last_name": row.last_name,
+                "rating": row.rating,
+                "salary": row.salary,
+                "percent_change": row.percent_change,
+                "dollar_change": row.dollar_change,
+                "new_salary": row.new_salary,
+                "bonus": row.bonus,
+            }
+            for row in rows
+        ]
+    finally:
+        session.close()
+
+
+def _db_replace_direct_report_comp_data_from_list(records: list[dict[str, Any]]) -> None:
+    """Replace direct_report_comp_data table from a list of statement dicts (same scope as comp JSON)."""
+    if not _db_available:
+        return
+    from sqlalchemy import delete
+
+    from wingmanem.database import get_session
+    from wingmanem.orm_models import DirectReportCompDataORM
+
+    session = get_session()
+    try:
+        session.execute(delete(DirectReportCompDataORM))
+        for rec in records:
+            if not isinstance(rec, dict):
+                continue
+            session.add(
+                DirectReportCompDataORM(
+                    direct_report_id=int(rec.get("direct_report_id") or 0),
+                    first_name=str(rec.get("first_name") or ""),
+                    last_name=str(rec.get("last_name") or ""),
+                    rating=int(rec.get("rating") or 0),
+                    salary=int(rec.get("salary") or 0),
+                    percent_change=float(rec.get("percent_change") or 0.0),
+                    dollar_change=int(rec.get("dollar_change") or 0),
+                    new_salary=int(rec.get("new_salary") or 0),
+                    bonus=int(rec.get("bonus") or 0),
+                )
+            )
+        session.commit()
+    except Exception:
+        session.rollback()
+        raise
+    finally:
+        session.close()
+
+
+def _db_delete_all_direct_report_comp_data() -> None:
+    """Remove all rows from direct-report comp data table."""
+    if not _db_available:
+        return
+    from sqlalchemy import delete
+
+    from wingmanem.database import get_session
+    from wingmanem.orm_models import DirectReportCompDataORM
+
+    session = get_session()
+    try:
+        session.execute(delete(DirectReportCompDataORM))
+        session.commit()
+    except Exception:
+        session.rollback()
+        raise
+    finally:
+        session.close()
 
 
 def _load_direct_report_goals() -> list[dict[str, Any]]:
-    """Load goals from JSON file. Creates file with [] if missing."""
+    """Load goals: prefer SQLite; else JSON. Mirror to JSON after DB read. Creates empty pair if missing."""
+    if _db_available:
+        try:
+            goals = _db_load_all_goals()
+        except Exception:
+            goals = []
+        if goals:
+            _write_direct_report_goals_json_file(goals)
+            return goals
     if not os.path.isfile(DIRECT_REPORT_GOALS_FILE):
-        goals: list[dict[str, Any]] = []
+        goals = []
         _save_direct_report_goals(goals)
         return goals
     try:
@@ -439,19 +694,25 @@ def _load_direct_report_goals() -> list[dict[str, Any]]:
                     "goal_description": str(g.get("goal_description") or "")[:100],
                     "goal_completion_date": str(g.get("goal_completion_date") or "")[:10],
                 })
+        if _db_available:
+            try:
+                _db_replace_goals_from_list(goals)
+            except Exception:
+                pass
+        _write_direct_report_goals_json_file(goals)
         return goals
     except (json.JSONDecodeError, OSError):
         return []
 
 
 def _save_direct_report_goals(goals: list[dict[str, Any]]) -> None:
-    """Save goals to JSON file and sync to DB."""
-    try:
-        with open(DIRECT_REPORT_GOALS_FILE, "w", encoding="utf-8") as f:
-            json.dump(goals, f, indent=2)
-        _db_sync_goals_from_list(goals)
-    except OSError as e:
-        print(f"Could not save goals: {e}", file=sys.stderr)
+    """Persist goals list: database replace then JSON mirror."""
+    if _db_available:
+        try:
+            _db_replace_goals_from_list(goals)
+        except Exception as e:
+            print(f"Could not save goals to database: {e}", file=sys.stderr)
+    _write_direct_report_goals_json_file(goals)
 
 
 def _next_goal_id(goals: list[dict[str, Any]]) -> int:
@@ -508,19 +769,11 @@ def _delete_goals_for_direct_report(direct_report_id: int) -> None:
     goals = _load_direct_report_goals()
     goals = [g for g in goals if int(g.get("direct_report_id") or 0) != direct_report_id]
     _save_direct_report_goals(goals)
-    _db_delete_goals_for_report(direct_report_id)
 
 
 def _delete_all_goals() -> None:
     """Delete all goals (when purging all direct reports)."""
     _save_direct_report_goals([])
-    if _db_available:
-        conn = _db_connection()
-        try:
-            conn.execute("DELETE FROM direct_report_goals")
-            conn.commit()
-        finally:
-            conn.close()
 
 
 def _generate_goals_with_ai(num: int) -> int:
@@ -631,13 +884,16 @@ Output only this JSON object, no other text."""
         return 0
 
 
-def _generate_employee_comp_statements() -> list[dict[str, Any]]:
-    """Generate compensation statements for direct reports and write to JSON file."""
+def _generate_direct_report_comp_statements() -> list[dict[str, Any]]:
+    """Generate compensation data for direct reports; persist to DB then JSON mirror."""
     if not direct_reports:
         statements: list[dict[str, Any]] = []
         try:
-            with open(EMPLOYEE_COMP_DATA_FILE, "w", encoding="utf-8") as f:
-                json.dump(statements, f, indent=2)
+            _db_replace_direct_report_comp_data_from_list(statements)
+        except Exception:
+            pass
+        try:
+            _write_direct_report_comp_data_json_file(statements)
         except OSError:
             pass
         return statements
@@ -647,7 +903,7 @@ def _generate_employee_comp_statements() -> list[dict[str, Any]]:
         if not rid:
             continue
         first = (r.get("first_name") or "").strip() or "Unknown"
-        last = (r.get("last_name") or "").strip() or "Employee"
+        last = (r.get("last_name") or "").strip() or "Direct Report"
         rating = random.randint(1, 5)
         # Base salary range
         salary = random.randint(90000, 200000)
@@ -683,20 +939,37 @@ def _generate_employee_comp_statements() -> list[dict[str, Any]]:
             }
         )
     try:
-        with open(EMPLOYEE_COMP_DATA_FILE, "w", encoding="utf-8") as f:
-            json.dump(statements, f, indent=2)
+        _db_replace_direct_report_comp_data_from_list(statements)
+    except Exception:
+        pass
+    try:
+        _write_direct_report_comp_data_json_file(statements)
     except OSError:
         pass
     return statements
 
 
-def _delete_employee_comp_statements() -> None:
-    """Delete employee_comp_data.json if present."""
-    try:
-        if os.path.isfile(EMPLOYEE_COMP_DATA_FILE):
-            os.remove(EMPLOYEE_COMP_DATA_FILE)
-    except OSError:
-        pass
+def _delete_direct_report_comp_statements() -> None:
+    """Delete direct-report comp data file if present and clear DB mirror table."""
+    for path in (DIRECT_REPORT_COMP_DATA_FILE, LEGACY_DIRECT_REPORT_COMP_DATA_FILE):
+        try:
+            if os.path.isfile(path):
+                os.remove(path)
+        except OSError:
+            pass
+    _db_delete_all_direct_report_comp_data()
+
+
+# Backward-compatible helper aliases (older names pointed at JSON-first ordering)
+_db_load_employee_comp_data = _db_load_direct_report_comp_data
+_db_sync_employee_comp_data_from_list = _db_replace_direct_report_comp_data_from_list
+_db_delete_all_employee_comp_data = _db_delete_all_direct_report_comp_data
+_generate_employee_comp_statements = _generate_direct_report_comp_statements
+_delete_employee_comp_statements = _delete_direct_report_comp_statements
+_db_sync_direct_reports_from_list = _db_replace_direct_reports_from_list
+_db_sync_management_tips_from_list = _db_replace_management_tips_from_list
+_db_sync_goals_from_list = _db_replace_goals_from_list
+_db_sync_direct_report_comp_data_from_list = _db_replace_direct_report_comp_data_from_list
 
 
 # ============================================================================
@@ -896,40 +1169,61 @@ def _normalize_direct_report(r: dict[str, Any]) -> dict[str, Any]:
 
 
 def _load_direct_reports() -> None:
-    """Read direct_reports from file into the global list; normalize keys and assign missing ids.
-    If the file does not exist, start with an empty list and create the file."""
+    """Load direct_reports into memory from SQLite when available; else from JSON. Mirror to JSON after DB load."""
     global direct_reports
-    if not os.path.isfile(DIRECT_REPORTS_FILE):
-        direct_reports = []
-        _save_direct_reports()
-        return
-    try:
-        with open(DIRECT_REPORTS_FILE, encoding="utf-8") as f:
-            data = json.load(f)
-        raw = data if isinstance(data, list) else []
-        direct_reports = [_normalize_direct_report(r) for r in raw if isinstance(r, dict)]
-        next_id = _next_direct_report_id()
-        for r in direct_reports:
-            try:
-                if int(r.get("id") or 0) <= 0:
+    if _db_available:
+        try:
+            from_db = _db_load_direct_reports()
+        except Exception:
+            from_db = []
+        if from_db:
+            direct_reports = from_db
+            next_id = _next_direct_report_id()
+            for r in direct_reports:
+                try:
+                    if int(r.get("id") or 0) <= 0:
+                        r["id"] = next_id
+                        next_id += 1
+                except (TypeError, ValueError):
                     r["id"] = next_id
                     next_id += 1
-            except (TypeError, ValueError):
-                r["id"] = next_id
-                next_id += 1
-    except (json.JSONDecodeError, OSError):
+            _write_direct_reports_json_file(direct_reports)
+            return
+    if os.path.isfile(DIRECT_REPORTS_FILE):
+        try:
+            with open(DIRECT_REPORTS_FILE, encoding="utf-8") as f:
+                data = json.load(f)
+            raw = data if isinstance(data, list) else []
+            direct_reports = [_normalize_direct_report(r) for r in raw if isinstance(r, dict)]
+            next_id = _next_direct_report_id()
+            for r in direct_reports:
+                try:
+                    if int(r.get("id") or 0) <= 0:
+                        r["id"] = next_id
+                        next_id += 1
+                except (TypeError, ValueError):
+                    r["id"] = next_id
+                    next_id += 1
+        except (json.JSONDecodeError, OSError):
+            direct_reports = []
+    else:
         direct_reports = []
-    _db_sync_direct_reports_from_list(direct_reports)
+    if _db_available:
+        try:
+            _db_replace_direct_reports_from_list(direct_reports)
+        except Exception:
+            pass
+    _write_direct_reports_json_file(direct_reports)
 
 
 def _save_direct_reports() -> None:
-    """Write the global direct_reports list to file and sync to database."""
-    try:
-        with open(DIRECT_REPORTS_FILE, "w", encoding="utf-8") as f:
-            json.dump(direct_reports, f, indent=2)
-        _db_sync_direct_reports_from_list(direct_reports)
-    except OSError as e:
-        print(f"Could not save direct reports: {e}", file=sys.stderr)
+    """Persist in-memory direct_reports: database first (full replace), then JSON mirror."""
+    if _db_available:
+        try:
+            _db_replace_direct_reports_from_list(direct_reports)
+        except Exception as e:
+            print(f"Could not save direct reports to database: {e}", file=sys.stderr)
+    _write_direct_reports_json_file(direct_reports)
 
 
 # ============================================================================
@@ -953,7 +1247,7 @@ _LIST_DIRECT_REPORT_COLUMNS = (
 
 
 def _print_direct_reports_table(reports: list[dict[str, Any]], title: str) -> None:
-    """Print a table of direct reports (used for file and database listings)."""
+    """Print a table of direct reports (database listing)."""
     cols = _LIST_DIRECT_REPORT_COLUMNS
     fmt_parts = [f"{{:>{cols[0][2]}}}"] + [f"{{:{c[2]}}}" for c in cols[1:]]
     fmt = " ".join(fmt_parts)
@@ -976,15 +1270,8 @@ def _print_direct_reports_table(reports: list[dict[str, Any]], title: str) -> No
 
 
 def _list_direct_reports() -> None:
-    """Display direct reports from file and from database separately."""
-    print("\n--- Direct Reports ---\n")
-    print("From file (direct_reports.json):")
-    if not direct_reports:
-        print("  No direct reports yet.")
-    else:
-        _print_direct_reports_table(direct_reports, "")
-    print()
-    print("From database:")
+    """Display direct reports from the database."""
+    print("\n--- Direct Reports (database) ---\n")
     try:
         db_reports = _db_load_direct_reports()
         if not db_reports:
@@ -1221,13 +1508,22 @@ def _purge_direct_reports() -> None | bool:
 # ============================================================================
 
 def _load_management_tips() -> None:
-    """Read management tips (date + text) from file into the global list.
-    File format: list of {"date": "YYYY-MM-DD", "text": "..."}.
-    Legacy: list of plain strings is migrated to new format with date set to today.
-    If the file does not exist, start with an empty list and create the file.
-    If the list is empty or we have not fetched a tip today, fetch a new tip from Mistral AI if available."""
+    """Load tips: prefer SQLite; else JSON. Mirror to JSON after DB load. Then seed today’s tip via Mistral if needed."""
     global management_tips
     today_str = date.today().isoformat()
+    if _db_available:
+        try:
+            db_tips = _db_load_management_tips()
+        except Exception:
+            db_tips = []
+        if db_tips:
+            management_tips = db_tips
+            _write_management_tips_json_file(management_tips)
+            last_date = management_tips[-1]["date"] if management_tips else None
+            need_new_tip = not management_tips or last_date != today_str
+            if need_new_tip and MISTRAL_AVAILABLE and _get_mistral_api_key():
+                _generate_management_tip_with_ai(silent=True)
+            return
     if not os.path.isfile(MANAGEMENT_TIPS_FILE):
         management_tips = []
         _save_management_tips()
@@ -1246,7 +1542,12 @@ def _load_management_tips() -> None:
                 management_tips = []
         except (json.JSONDecodeError, OSError):
             management_tips = []
-    _db_sync_management_tips_from_list(management_tips)
+    if _db_available:
+        try:
+            _db_replace_management_tips_from_list(management_tips)
+        except Exception:
+            pass
+    _write_management_tips_json_file(management_tips)
     last_date = management_tips[-1]["date"] if management_tips else None
     need_new_tip = not management_tips or last_date != today_str
     if need_new_tip and MISTRAL_AVAILABLE and _get_mistral_api_key():
@@ -1254,13 +1555,13 @@ def _load_management_tips() -> None:
 
 
 def _save_management_tips() -> None:
-    """Write the global management_tips list to file and sync to database."""
-    try:
-        with open(MANAGEMENT_TIPS_FILE, "w", encoding="utf-8") as f:
-            json.dump(management_tips, f, indent=2)
-        _db_sync_management_tips_from_list(management_tips)
-    except OSError as e:
-        print(f"Could not save management tips: {e}", file=sys.stderr)
+    """Persist management_tips: database replace then JSON mirror."""
+    if _db_available:
+        try:
+            _db_replace_management_tips_from_list(management_tips)
+        except Exception as e:
+            print(f"Could not save management tips to database: {e}", file=sys.stderr)
+    _write_management_tips_json_file(management_tips)
 
 
 def _get_latest_management_tip() -> str:
@@ -1357,17 +1658,9 @@ Focus specifically on: {theme}. Give one concrete tip (not generic advice like "
 
 
 def _print_management_tips_by_date() -> None:
-    """Print management tips from file and from database separately, by date."""
+    """Print management tips from the database, by date."""
     _clear_screen()
-    print("\n--- Management Tips by Date ---\n")
-    print("From file (management_tips.json):")
-    if not management_tips:
-        print("  No tips yet.")
-    else:
-        for entry in management_tips:
-            print(f"  {entry['date']}:  {entry['text']}")
-    print()
-    print("From database:")
+    print("\n--- Management Tips by Date (database) ---\n")
     try:
         db_tips = _db_load_management_tips()
         if not db_tips:
@@ -1381,7 +1674,7 @@ def _print_management_tips_by_date() -> None:
 
 
 # ============================================================================
-# MILESTONE REMINDERS — birthdays & anniversaries (from file and DB)
+# MILESTONE REMINDERS — birthdays & anniversaries (from database)
 # ============================================================================
 
 def _compute_milestones_from_reports(reports: list[dict[str, Any]], range_days: int) -> list[tuple[int, str]]:
@@ -1421,29 +1714,19 @@ def _compute_milestones_from_reports(reports: list[dict[str, Any]], range_days: 
 
 
 def _view_milestone_reminders() -> None | bool:
-    """Show upcoming birthdays and anniversaries from file and database separately."""
-    today = date.today()
+    """Show upcoming birthdays and anniversaries from the database."""
 
     def _print_upcoming(range_days: int) -> None:
         _clear_screen()
-        print("\n--- Milestone Reminders ---\n")
+        print("\n--- Milestone Reminders (database) ---\n")
         print(f"Showing the next {range_days} days.\n")
-        print("From file (direct_reports.json):")
-        file_upcoming = _compute_milestones_from_reports(direct_reports, range_days)
-        if not file_upcoming:
-            print("  No upcoming birthdays or anniversaries.")
-        else:
-            for _, msg in file_upcoming:
-                print(f"  {msg}")
-        print()
-        print("From database:")
         try:
             db_reports = _db_load_direct_reports()
-            db_upcoming = _compute_milestones_from_reports(db_reports, range_days)
-            if not db_upcoming:
+            upcoming = _compute_milestones_from_reports(db_reports, range_days)
+            if not upcoming:
                 print("  No upcoming birthdays or anniversaries.")
             else:
-                for _, msg in db_upcoming:
+                for _, msg in upcoming:
                     print(f"  {msg}")
         except Exception as e:
             print(f"  Error loading from database: {e}")
@@ -1635,31 +1918,6 @@ def _build_main_menu() -> str:
         ],
         middle=[
             ("DAILY MANAGEMENT TIP:", f" {tip}  "),
-            "",
-            "",
-            (
-                "Instructions For Dr. Riskas:",
-                " You can navigate to either 'Administer Direct Reports' or "
-                "'View Management Tips by Date' (select red options) to see "
-                "file operations in action. There are two files "
-                "direct_reports.json and management_tips.json that store the "
-                "data for the direct reports and management tips respectively. "
-                "Management tips are generated by Mistral AI daily and are "
-                "stored in the management_tips.json file. When a direct "
-                "report is added or deleted, the data is persisted to "
-                "direct_reports.json. Both files are read back in when the "
-                "program starts up for persistence. If one or both files are "
-                "missing, the program will function as normal. I have also "
-                "implemented a SQLite database to store the data for the "
-                "direct reports and management tips in addition to the files "
-                "since I felt this would be the next logical step. The "
-                "database is stored in the wingmanem.db file. When listing "
-                "direct reports or management tips the results should be "
-                "shown from both the file and database separately for comparison. 1:1 "
-                "summaries are also stored in the database but are not stored "
-                "in the files. There is a sample 1:1 summary in the database for direct report ID 2 on 2026-02-16."
-            ),
-            "",
         ],
         middle_position="bottom",
     )

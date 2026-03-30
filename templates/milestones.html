@@ -7,24 +7,15 @@
 
 {% block content %}
   <h2 style="margin-bottom: 1rem;">Milestone Reminders</h2>
-  <p style="color: var(--text-muted); margin-bottom: 1rem;">Showing the next {{ days }} days.</p>
+  <p style="color: var(--text-muted); margin-bottom: 1rem;">Showing the next {{ days }} days (from database).</p>
   <p><a href="{{ url_for('milestones', days=60) }}">Next 60 days</a> · <a href="{{ url_for('milestones', days=90) }}">Next 90 days</a></p>
 
-  <div class="section-title">From file (direct_reports.json)</div>
-  {% if not file_upcoming %}
+  <div class="section-title">Upcoming milestones</div>
+  {% if not upcoming %}
   <p class="text-muted">No upcoming birthdays or anniversaries.</p>
   {% else %}
   <ul style="margin: 0.5rem 0;">
-    {% for _d, msg in file_upcoming %}<li>{{ msg }}</li>{% endfor %}
-  </ul>
-  {% endif %}
-
-  <div class="section-title">From database</div>
-  {% if not db_upcoming %}
-  <p class="text-muted">No upcoming birthdays or anniversaries.</p>
-  {% else %}
-  <ul style="margin: 0.5rem 0;">
-    {% for _d, msg in db_upcoming %}<li>{{ msg }}</li>{% endfor %}
+    {% for _d, msg in upcoming %}<li>{{ msg }}</li>{% endfor %}
   </ul>
   {% endif %}
 
