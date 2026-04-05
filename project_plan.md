@@ -46,6 +46,11 @@ While WingmanEM is purpose-built for Software Engineering Managers addressing th
 - All traffic must be served over SSL/TLS
 - Stored data should not be available outside of the app except where designated (ie. Jira, texts)
 
+#### Per-user data isolation (web)
+
+- The Flask app is **multi-tenant by user**: each signed-in user only loads and mutates rows tied to their account. Direct reports (and goals, 1:1s, comp flows, and management tips where the schema supports it) are scoped with an `owner_user_id` foreign key to the application user.
+- **Legacy / orphan rows:** rows created before ownership existed may have `owner_user_id` NULL. When the **first** application user registers and the user table was previously empty, those orphan rows are assigned to that new user so an upgraded or single-admin install does not lose data. Subsequent registrations do **not** claim orphans; new users start with an empty dataset unless they create their own records.
+
 ### Application Flow & UI
 
 - UI and app functionality should be performant
@@ -61,34 +66,87 @@ While WingmanEM is purpose-built for Software Engineering Managers addressing th
 
 ## Data Model
 
-### Table: Direct_Reports
+The live database is **SQLite** accessed through **SQLAlchemy**. Column types below match the implemented schema (`wingmanem/orm_models.py`); string and date-like fields are stored as **TEXT** (dates as ISO strings such as `YYYY-MM-DD` where used).
+
+### Table: Users (`users`)
 
 | Attribute | Data Type | Rationale |
 |-----------|-----------|-----------|
-| id | INTEGER | Primary Key. Use AUTO_INCREMENT (MySQL) or PRIMARY KEY (SQLite). |
-| first_name | VARCHAR(50) | Standard length for names. |
-| last_name | VARCHAR(50) | Stored separately to enable easy sorting and "Wingman" personalization. |
-| street_address_1 | VARCHAR(100) | Primary address line for care packages or local information. |
-| street_address_2 | VARCHAR(100) | Optional field for apartment or suite numbers; allow NULL. |
-| city | VARCHAR(50) | (Added for completeness) Required for proper address structure. |
-| state | CHAR(2) or VARCHAR(50) | Use CHAR(2) if you strictly use ISO codes (e.g., "UT"); VARCHAR for global flexibility. |
-| zipcode | VARCHAR(10) | Use VARCHAR to handle leading zeros (e.g., 02108) and international postal codes. |
-| country | VARCHAR(50) | Helpful for EMs managing distributed/global teams. |
-| birthday | DATE | Store as YYYY-MM-DD. Used for your "Important Events" reminders. |
-| hire_date | DATE | Critical for calculating total company tenure and work anniversaries. |
-| current_role | VARCHAR(100) | Descriptive title (e.g., "Senior Software Engineer"). |
-| role_start_date | DATE | Used to calculate "Tenure in Role" to identify when a report might be due for a promotion or new challenge. |
-| partner_name | VARCHAR(50) | Valuable "soft" data for building rapport during 1:1s. |
+| id | INTEGER PRIMARY KEY AUTOINCREMENT | Surrogate key for each application account. |
+| first_name | TEXT NOT NULL | Display name; default empty string in DDL. |
+| last_name | TEXT NOT NULL | Display name; default empty string in DDL. |
+| login_id | TEXT NOT NULL UNIQUE | User-facing identifier used at login (not the numeric `id`). |
 
-### Table: Direct_Report_Goals
+### Table: User_Passwords (`user_passwords`)
 
 | Attribute | Data Type | Rationale |
 |-----------|-----------|-----------|
-| id | INTEGER | Primary Key. Use AUTO_INCREMENT (MySQL) or PRIMARY KEY (SQLite). |
-| direct_report_id | INTEGER | Id for the direct report to whom the goal belongs. |
-| goal_title | VARCHAR(50) | Title of Goal. |
-| goal_description | VARCHAR(100) | Detailed Description of Goal. |
-| goal_completion_date | DATE | Completion date of goal. |
+| id | INTEGER PRIMARY KEY AUTOINCREMENT | Surrogate key for the password row. |
+| user_id | INTEGER NOT NULL UNIQUE, FK → `users.id` ON DELETE CASCADE | One password row per user; deleting the user removes the hash. |
+| password_hash | TEXT NOT NULL | Werkzeug-style password hash; never store plaintext passwords. |
+
+### Table: Direct_Reports (`direct_reports`)
+
+| Attribute | Data Type | Rationale |
+|-----------|-----------|-----------|
+| id | INTEGER PRIMARY KEY | Primary key; application assigns ids when adding reports (not database autoincrement). |
+| first_name | TEXT | Required in app logic for a valid record; stored as TEXT. |
+| last_name | TEXT | Same as `first_name`. |
+| street_address_1 | TEXT NULL | Primary address line for care packages or local information. |
+| street_address_2 | TEXT NULL | Optional suite or second line. |
+| city | TEXT NULL | City for address structure. |
+| state | TEXT NULL | Region or state (e.g., ISO code or full name). |
+| zipcode | TEXT NULL | Preserves leading zeros and international formats. |
+| country | TEXT NULL | Useful for distributed teams. |
+| birthday | TEXT NULL | ISO date string when set; supports milestone reminders. |
+| hire_date | TEXT NULL | Tenure and anniversary calculations. |
+| current_role | TEXT NULL | Job title (e.g., "Senior Software Engineer"). |
+| role_start_date | TEXT NULL | Tenure-in-role for growth conversations. |
+| partner_name | TEXT NULL | Optional rapport context for 1:1s. |
+| owner_user_id | INTEGER NULL, FK → `users.id` | Web app: scopes the row to the owning account; see *Per-user data isolation* under Security. |
+
+### Table: Management_Tips (`management_tips`)
+
+| Attribute | Data Type | Rationale |
+|-----------|-----------|-----------|
+| id | INTEGER PRIMARY KEY AUTOINCREMENT | Tip row identifier. |
+| date | TEXT NOT NULL | Tip date label or stamp (as stored by the app). |
+| text | TEXT NOT NULL | Body of the management tip or coaching snippet. |
+| owner_user_id | INTEGER NULL, FK → `users.id` | When set, tip is visible only to that user in the web app. |
+
+### Table: One_To_One_Summaries (`one_to_one_summaries`)
+
+| Attribute | Data Type | Rationale |
+|-----------|-----------|-----------|
+| id | INTEGER PRIMARY KEY AUTOINCREMENT | Summary row identifier. |
+| direct_report_id | INTEGER NOT NULL | Links the summary to a direct report (enforced in app routes by ownership of that report). |
+| date | TEXT NOT NULL | When the 1:1 or upload was summarized. |
+| response_text | TEXT NOT NULL | AI or stored summary / action text. |
+
+### Table: Direct_Report_Goals (`direct_report_goals`)
+
+| Attribute | Data Type | Rationale |
+|-----------|-----------|-----------|
+| id | INTEGER PRIMARY KEY AUTOINCREMENT | Goal row identifier. |
+| direct_report_id | INTEGER NOT NULL | Foreign key to the direct report; goals are deleted when that report is removed (app/DB logic). |
+| goal_title | TEXT NULL | Short title for the goal. |
+| goal_description | TEXT NULL | Longer description. |
+| goal_completion_date | TEXT NULL | Target completion date as stored (typically ISO). |
+
+### Table: Direct_Report_Comp_Data (`direct_report_comp_data`)
+
+| Attribute | Data Type | Rationale |
+|-----------|-----------|-----------|
+| id | INTEGER PRIMARY KEY AUTOINCREMENT | Row identifier for generated comp inputs. |
+| direct_report_id | INTEGER NOT NULL | Associates comp data with a direct report. |
+| first_name | TEXT NOT NULL | Snapshot for letters and display (may mirror the report). |
+| last_name | TEXT NOT NULL | Same as `first_name`. |
+| rating | INTEGER NOT NULL | Performance rating 1–5 driving template paragraph selection. |
+| salary | INTEGER NOT NULL | Base annual salary in whole dollars before adjustment. |
+| percent_change | REAL NOT NULL | Compensation change in percentage points (e.g., `5.0` means 5% of base salary). |
+| dollar_change | INTEGER NOT NULL | Dollar amount of the raise (whole dollars). |
+| new_salary | INTEGER NOT NULL | Salary after applying the change (whole dollars). |
+| bonus | INTEGER NOT NULL | Bonus amount for the cycle (whole dollars). |
 
 
 ## Program Chunks

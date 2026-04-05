@@ -21,13 +21,15 @@ SQL_DIRECT_REPORTS = """CREATE TABLE IF NOT EXISTS direct_reports (
     hire_date TEXT,
     current_role TEXT,
     role_start_date TEXT,
-    partner_name TEXT
+    partner_name TEXT,
+    owner_user_id INTEGER REFERENCES users(id)
 );"""
 
 SQL_MANAGEMENT_TIPS = """CREATE TABLE IF NOT EXISTS management_tips (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     date TEXT NOT NULL,
-    text TEXT NOT NULL
+    text TEXT NOT NULL,
+    owner_user_id INTEGER REFERENCES users(id)
 );"""
 
 SQL_ONE_TO_ONE = """CREATE TABLE IF NOT EXISTS one_to_one_summaries (

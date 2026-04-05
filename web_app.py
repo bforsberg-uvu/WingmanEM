@@ -14,7 +14,7 @@ from datetime import date
 # Ensure project root is on path so wingmanem and data files resolve
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from flask import Flask, flash, redirect, render_template, request, url_for
+from flask import Flask, flash, g, redirect, render_template, request, url_for
 from flask_login import LoginManager, UserMixin, current_user, login_user, logout_user
 
 import wingmanem.app as app_module
@@ -73,7 +73,12 @@ def init_data():
     """Init DB, migrate JSON into empty tables if needed, then load globals (DB-first, JSON mirrored)."""
     app_module._db_init()
     app_module._db_populate_from_json_files()
-    app_module._load_direct_reports()
+    # Legacy rows with NULL owner_user_id: if only one account exists, assign to that user (same as first registration).
+    if auth_users_module.count_users() == 1:
+        only_uid = app_module._db_first_user_id()
+        if only_uid is not None:
+            app_module._assign_orphan_rows_to_user(only_uid)
+    # Per-user direct reports are loaded per request into Flask g (see _before_each_request).
     app_module._load_management_tips()
     # Ensure goals JSON exists
     app_module._load_direct_report_goals()
@@ -89,6 +94,8 @@ def _before_each_request():
         return None
     if not current_user.is_authenticated:
         return redirect(url_for("login", next=request.full_path))
+
+    g.direct_reports = app_module._db_load_direct_reports_for_user(current_user.id)
 
 
 # ----- Auth (exempt from global login check) -----
@@ -123,13 +130,15 @@ def register():
         if p1 != p2:
             flash("Passwords do not match.", "error")
             return render_template("register.html")
-        ok, err = auth_users_module.create_user(
+        ok, err, new_uid = auth_users_module.create_user(
             request.form.get("first_name", ""),
             request.form.get("last_name", ""),
             request.form.get("user_id", ""),
             p1,
         )
         if ok:
+            if new_uid is not None and auth_users_module.count_users() == 1:
+                app_module._assign_orphan_rows_to_user(new_uid)
             flash("Account created. Please log in.", "success")
             return redirect(url_for("login"))
         flash(err, "error")
@@ -147,7 +156,8 @@ def logout():
 @app.route("/")
 def index():
     """Main menu — single functional route to the main menu."""
-    tip = app_module._get_latest_management_tip()
+    app_module._ensure_daily_management_tip_for_user(current_user.id)
+    tip = app_module._get_latest_management_tip_for_user(current_user.id)
     return render_template("main.html", tip=tip)
 
 
@@ -169,10 +179,7 @@ def people_menu():
 
 @app.route("/people/direct-reports")
 def direct_reports_list():
-    try:
-        reports = app_module._db_load_direct_reports()
-    except Exception:
-        reports = []
+    reports = g.direct_reports
     return render_template(
         "direct_reports.html",
         reports=reports,
@@ -187,7 +194,8 @@ def direct_report_add():
         return render_template("direct_report_add.html")
     # POST: build report from form
     report = {
-        "id": app_module._next_direct_report_id(),
+        "id": app_module._db_next_direct_report_id(),
+        "owner_user_id": current_user.id,
         "first_name": request.form.get("first_name", "").strip() or "Unknown",
         "last_name": request.form.get("last_name", "").strip() or "Unknown",
         "street_address_1": request.form.get("street_address_1", "").strip() or None,
@@ -203,15 +211,16 @@ def direct_report_add():
         "partner_name": request.form.get("partner_name", "").strip() or None,
     }
     report = app_module._normalize_direct_report(report)
-    app_module.direct_reports.append(report)
-    app_module._save_direct_reports()
+    report["owner_user_id"] = current_user.id
+    g.direct_reports.append(report)
+    app_module._save_direct_reports_for_user(current_user.id, g.direct_reports)
     return redirect(url_for("direct_reports_list"))
 
 
 @app.route("/people/direct-reports/edit/<int:item_id>", methods=["GET", "POST"])
 def direct_report_edit(item_id):
     """Edit an existing direct report (same fields as add)."""
-    report = next((r for r in app_module.direct_reports if r.get("id") == item_id), None)
+    report = next((r for r in g.direct_reports if r.get("id") == item_id), None)
     if report is None:
         return redirect(url_for("direct_reports_list"))
     if request.method == "GET":
@@ -233,39 +242,44 @@ def direct_report_edit(item_id):
         "partner_name": request.form.get("partner_name", "").strip() or None,
     }
     updated = app_module._normalize_direct_report(updated)
-    idx = next(i for i, r in enumerate(app_module.direct_reports) if r.get("id") == item_id)
-    app_module.direct_reports[idx] = updated
-    app_module._save_direct_reports()
+    updated["owner_user_id"] = current_user.id
+    idx = next(i for i, r in enumerate(g.direct_reports) if r.get("id") == item_id)
+    g.direct_reports[idx] = updated
+    app_module._save_direct_reports_for_user(current_user.id, g.direct_reports)
     return redirect(url_for("direct_reports_list"))
 
 
 @app.route("/people/direct-reports/delete/<int:item_id>", methods=["GET", "POST"])
 def direct_report_delete(item_id):
     """Confirm (GET) or perform (POST) deletion of a direct report."""
-    report = next((r for r in app_module.direct_reports if r.get("id") == item_id), None)
+    report = next((r for r in g.direct_reports if r.get("id") == item_id), None)
     if report is None:
         return redirect(url_for("direct_reports_list"))
     if request.method == "GET":
         return render_template("direct_report_delete_confirm.html", report=report, item_id=item_id)
     index = next(
-        (i for i, r in enumerate(app_module.direct_reports) if r.get("id") == item_id),
+        (i for i, r in enumerate(g.direct_reports) if r.get("id") == item_id),
         None,
     )
     if index is not None:
         app_module._delete_goals_for_direct_report(item_id)
         app_module._db_purge_one_to_one_for_report(item_id)
         app_module._db_delete_comp_data_for_direct_report(item_id)
-        app_module.direct_reports.pop(index)
-        app_module._save_direct_reports()
+        g.direct_reports.pop(index)
+        app_module._save_direct_reports_for_user(current_user.id, g.direct_reports)
     return redirect(url_for("direct_reports_list"))
 
 
 @app.route("/people/direct-reports/purge", methods=["POST"])
 def direct_reports_purge():
-    app_module._delete_all_goals()
-    app_module._delete_direct_report_comp_statements()
-    app_module.direct_reports.clear()
-    app_module._save_direct_reports()
+    uid = current_user.id
+    rids = list(app_module._report_ids_owned_by_user(uid))
+    for rid in rids:
+        app_module._db_purge_one_to_one_for_report(rid)
+        app_module._db_delete_comp_data_for_direct_report(rid)
+    app_module._delete_all_goals_for_user(uid)
+    g.direct_reports.clear()
+    app_module._save_direct_reports_for_user(uid, g.direct_reports)
     return redirect(url_for("direct_reports_list"))
 
 
@@ -277,18 +291,15 @@ def direct_reports_generate():
             n = max(1, min(10, int(num)))
         except ValueError:
             n = 3
-        from unittest.mock import patch
-        with patch("builtins.input", side_effect=[str(n)]), patch(
-            "wingmanem.app._clear_screen", lambda: None
-        ):
-            app_module._generate_direct_reports_with_ai()
+        app_module._generate_direct_reports_with_ai_for_user(current_user.id, n)
+        g.direct_reports[:] = app_module._db_load_direct_reports_for_user(current_user.id)
     return redirect(url_for("direct_reports_list"))
 
 
 @app.route("/people/direct-reports/generate_ratings", methods=["POST"])
 def direct_reports_generate_ratings():
     """Generate direct report compensation statements from direct reports."""
-    app_module._generate_direct_report_comp_statements()
+    app_module._generate_direct_report_comp_statements_for_user(current_user.id)
     return redirect(url_for("direct_reports_list"))
 
 
@@ -297,7 +308,7 @@ def direct_reports_generate_ratings():
 @app.route("/people/tips")
 def tips_list():
     try:
-        tips = app_module._db_load_management_tips()
+        tips = app_module._db_load_management_tips_for_user(current_user.id)
     except Exception:
         tips = []
     return render_template("tips.html", tips=tips)
@@ -310,8 +321,7 @@ def milestones():
     days = request.args.get("days", 30, type=int)
     days = max(1, min(365, days))
     try:
-        db_reports = app_module._db_load_direct_reports()
-        upcoming = app_module._compute_milestones_from_reports(db_reports, days)
+        upcoming = app_module._compute_milestones_from_reports(g.direct_reports, days)
     except Exception:
         upcoming = []
     return render_template(
@@ -325,7 +335,7 @@ def milestones():
 
 @app.route("/people/1to1")
 def one_to_one_menu():
-    reports = app_module.direct_reports
+    reports = g.direct_reports
     report_summaries = []
     for r in reports:
         rid = r.get("id")
@@ -345,11 +355,13 @@ def one_to_one_view():
     report_id = request.args.get("report_id", type=int)
     if not report_id:
         return redirect(url_for("one_to_one_menu"))
+    if not app_module.user_owns_direct_report(current_user.id, report_id):
+        return redirect(url_for("one_to_one_menu"))
     date_filter = request.args.get("date", "").strip()
     summaries = app_module._db_get_one_to_one_summaries(report_id)
     if date_filter:
         summaries = [s for s in summaries if s.get("date") == date_filter]
-    report = next((r for r in app_module.direct_reports if r.get("id") == report_id), None)
+    report = next((r for r in g.direct_reports if r.get("id") == report_id), None)
     return render_template(
         "one_to_one_view.html",
         report_id=report_id,
@@ -363,8 +375,10 @@ def one_to_one_delete():
     report_id = request.args.get("report_id", type=int) or (request.form.get("report_id", type=int))
     if not report_id:
         return redirect(url_for("one_to_one_menu"))
+    if not app_module.user_owns_direct_report(current_user.id, report_id):
+        return redirect(url_for("one_to_one_menu"))
     summaries = app_module._db_get_one_to_one_summaries(report_id)
-    report = next((r for r in app_module.direct_reports if r.get("id") == report_id), None)
+    report = next((r for r in g.direct_reports if r.get("id") == report_id), None)
     if request.method == "POST":
         date_str = request.form.get("date", "").strip()
         if date_str:
@@ -383,7 +397,9 @@ def one_to_one_purge():
     report_id = request.args.get("report_id", type=int) or (request.form.get("report_id", type=int))
     if not report_id:
         return redirect(url_for("one_to_one_menu"))
-    report = next((r for r in app_module.direct_reports if r.get("id") == report_id), None)
+    if not app_module.user_owns_direct_report(current_user.id, report_id):
+        return redirect(url_for("one_to_one_menu"))
+    report = next((r for r in g.direct_reports if r.get("id") == report_id), None)
     if request.method == "POST":
         app_module._db_purge_one_to_one_for_report(report_id)
         return redirect(url_for("one_to_one_menu"))
@@ -398,11 +414,13 @@ def one_to_one_upload():
         upload_error = request.args.get("error")
         return render_template(
             "one_to_one_upload.html",
-            reports=app_module.direct_reports,
+            reports=g.direct_reports,
             upload_error=upload_error,
         )
     report_id = request.form.get("report_id", type=int)
     if not report_id:
+        return redirect(url_for("one_to_one_upload"))
+    if not app_module.user_owns_direct_report(current_user.id, report_id):
         return redirect(url_for("one_to_one_upload"))
     f = request.files.get("audio")
     if not f or not f.filename:
@@ -461,14 +479,14 @@ Format the response clearly with headings (Summary, Action Items, Follow-ups). U
 
 def _reports_with_goals():
     """Return list of direct reports that have at least one goal, with goal_count."""
-    goals = app_module._load_direct_report_goals()
+    goals = app_module._load_direct_report_goals_for_user(current_user.id)
     by_report: dict[int, int] = {}
-    for g in goals:
-        rid = int(g.get("direct_report_id") or 0)
+    for goal_row in goals:
+        rid = int(goal_row.get("direct_report_id") or 0)
         if rid:
             by_report[rid] = by_report.get(rid, 0) + 1
     reports = []
-    for r in app_module.direct_reports:
+    for r in g.direct_reports:
         rid = r.get("id")
         if rid and by_report.get(rid):
             r_copy = dict(r)
@@ -522,7 +540,7 @@ def goal_generate():
             num = max(1, min(20, int(request.form.get("num", "5"))))
         except ValueError:
             num = 5
-        added = app_module._generate_goals_with_ai(num)
+        added = app_module._generate_goals_with_ai_for_user(current_user.id, num)
         return redirect(url_for("goals_admin", generated=added))
     return render_template("goal_generate.html")
 
@@ -530,14 +548,15 @@ def goal_generate():
 @app.route("/items")
 def comp_items():
     """Load direct report compensation rows from the database and render compensation statements."""
+    uid = current_user.id
     try:
-        items = app_module._db_load_direct_report_comp_data()
+        items = app_module._db_load_direct_report_comp_data_for_user(uid)
     except Exception:
         items = []
-    if not items and app_module.direct_reports:
-        app_module._generate_direct_report_comp_statements()
+    if not items and g.direct_reports:
+        app_module._generate_direct_report_comp_statements_for_user(uid)
         try:
-            items = app_module._db_load_direct_report_comp_data()
+            items = app_module._db_load_direct_report_comp_data_for_user(uid)
         except Exception:
             items = []
     # Build a simple lookup for rating labels
@@ -550,6 +569,8 @@ def comp_items():
     }
     selected_report_id = request.args.get("report_id", type=int)
     selected_item = None
+    if selected_report_id and not app_module.user_owns_direct_report(uid, selected_report_id):
+        selected_report_id = None
     if selected_report_id:
         for it in items:
             try:
@@ -570,7 +591,7 @@ def comp_items():
 @app.route("/people/goals/add", methods=["GET"])
 def goal_add():
     """Display add goal form."""
-    return render_template("goal_add.html", reports=app_module.direct_reports)
+    return render_template("goal_add.html", reports=g.direct_reports)
 
 
 @app.route("/people/goals/add_goal", methods=["POST"])
@@ -583,8 +604,10 @@ def goal_add_post():
     goal_completion_date = request.form.get("goal_completion_date", "").strip() or None
     if not direct_report_id:
         return redirect(url_for("goal_add"))
-    goals = app_module._load_direct_report_goals()
-    new_id = app_module._next_goal_id(goals)
+    if not app_module.user_owns_direct_report(current_user.id, direct_report_id):
+        return redirect(url_for("goal_add"))
+    goals = app_module._load_direct_report_goals_for_user(current_user.id)
+    new_id = app_module._next_goal_id_global()
     goal_dict = {
         "id": new_id,
         "direct_report_id": direct_report_id,
@@ -593,7 +616,7 @@ def goal_add_post():
         "goal_completion_date": goal_completion_date[:10] if goal_completion_date else "",
     }
     goals.append(goal_dict)
-    app_module._save_direct_report_goals(goals)
+    app_module._save_direct_report_goals_for_user(current_user.id, goals)
     # Store for success page
     from flask import session
     post_request = str(dict(request.form))
@@ -602,7 +625,7 @@ def goal_add_post():
         "post_request": post_request,
         "post_raw_http": post_raw_http,
         "goal_dict": str(goal_dict),
-        "json_contents": str(app_module._load_direct_report_goals()),
+        "json_contents": str(app_module._load_direct_report_goals_for_user(current_user.id)),
     }
     return redirect(url_for("goal_successfully_added"))
 
@@ -615,11 +638,18 @@ def goal_successfully_added():
     if not data:
         return redirect(url_for("goals_admin"))
     import json as json_mod
-    json_contents = json_mod.dumps(app_module._load_direct_report_goals(), indent=2)
-    db_rows = app_module._db_load_all_goals()
+    uid = current_user.id
+    my_goals = app_module._load_direct_report_goals_for_user(uid)
+    json_contents = json_mod.dumps(my_goals, indent=2)
+    my_rids = app_module._report_ids_owned_by_user(uid)
+    db_rows = [
+        row
+        for row in app_module._db_load_all_goals()
+        if int(row.get("direct_report_id") or 0) in my_rids
+    ]
     report_names = {
         r.get("id"): f"{r.get('first_name', '')} {r.get('last_name', '')}".strip() or "—"
-        for r in app_module.direct_reports
+        for r in g.direct_reports
         if r.get("id")
     }
     return render_template(
@@ -647,8 +677,10 @@ def goal_view_report():
     report_id = request.args.get("report_id", type=int)
     if not report_id:
         return redirect(url_for("goal_view"))
+    if not app_module.user_owns_direct_report(current_user.id, report_id):
+        return redirect(url_for("goal_view"))
     goals = app_module._db_load_goals_for_report(report_id)
-    report = next((r for r in app_module.direct_reports if r.get("id") == report_id), None)
+    report = next((r for r in g.direct_reports if r.get("id") == report_id), None)
     report_name = f"{report.get('first_name', '')} { report.get('last_name', '')} (ID {report_id})" if report else f"Report ID {report_id}"
     get_request = str(dict(request.args))
     get_raw_http = _raw_http_request_for_display(request, "")
@@ -669,7 +701,9 @@ def goal_edit(goal_id):
     if not goal:
         return redirect(url_for("goal_view"))
     report_id = goal.get("direct_report_id")
-    report = next((r for r in app_module.direct_reports if r.get("id") == report_id), None)
+    if not app_module.user_owns_direct_report(current_user.id, int(report_id or 0)):
+        return redirect(url_for("goal_view"))
+    report = next((r for r in g.direct_reports if r.get("id") == report_id), None)
     report_name = f"{report.get('first_name', '')} {report.get('last_name', '')} (ID {report_id})" if report else f"Report ID {report_id}"
     return render_template(
         "goal_edit.html",
@@ -688,6 +722,8 @@ def goal_update(goal_id):
     if not goal:
         return "", 404
     report_id = goal.get("direct_report_id")
+    if not app_module.user_owns_direct_report(current_user.id, int(report_id or 0)):
+        return "", 403
     goal_title = request.form.get("goal_title", "").strip()
     goal_description = request.form.get("goal_description", "").strip()
     goal_completion_date = request.form.get("goal_completion_date", "").strip() or None
@@ -709,6 +745,8 @@ def goal_delete(goal_id):
     if not goal:
         return "", 404
     report_id = goal.get("direct_report_id")
+    if not app_module.user_owns_direct_report(current_user.id, int(report_id or 0)):
+        return "", 403
     app_module._delete_goal_by_id(goal_id)
     session["last_goal_request"] = {
         "request_type": "delete",
@@ -736,6 +774,8 @@ def goal_request_result():
 @app.route("/people/goals/report/<int:report_id>/delete_all", methods=["POST"])
 def goal_delete_all_for_report(report_id):
     """Delete all goals for a direct report."""
+    if not app_module.user_owns_direct_report(current_user.id, report_id):
+        return redirect(url_for("goal_view"))
     app_module._delete_goals_for_direct_report(report_id)
     return redirect(url_for("goal_view"))
 
@@ -743,7 +783,7 @@ def goal_delete_all_for_report(report_id):
 @app.route("/people/goals/delete_all", methods=["POST"])
 def goal_delete_all():
     """Delete all goals for all direct reports."""
-    app_module._delete_all_goals()
+    app_module._delete_all_goals_for_user(current_user.id)
     return redirect(url_for("goal_view"))
 
 
@@ -752,7 +792,7 @@ def goal_remove():
     """Remove goals: select direct report (GET) or process form (POST)."""
     if request.method == "POST":
         direct_report_id = request.form.get("direct_report_id", type=int)
-        if direct_report_id:
+        if direct_report_id and app_module.user_owns_direct_report(current_user.id, direct_report_id):
             app_module._delete_goals_for_direct_report(direct_report_id)
         return redirect(url_for("goals_admin"))
     reports_with_goals = _reports_with_goals()

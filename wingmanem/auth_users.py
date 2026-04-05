@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from werkzeug.security import check_password_hash, generate_password_hash
 
 from wingmanem.database import get_session
@@ -18,20 +18,20 @@ def _open_session():
         return None
 
 
-def create_user(first_name: str, last_name: str, login_id: str, password: str) -> tuple[bool, str]:
-    """Create users row + user_passwords row. Returns (ok, error_message)."""
+def create_user(first_name: str, last_name: str, login_id: str, password: str) -> tuple[bool, str, int | None]:
+    """Create users row + user_passwords row. Returns (ok, error_message, new_user_id_or_None)."""
     login_id = (login_id or "").strip()
     if not login_id:
-        return False, "User ID is required."
+        return False, "User ID is required.", None
     if not password:
-        return False, "Password is required."
+        return False, "Password is required.", None
     session = _open_session()
     if session is None:
-        return False, "Database is not available."
+        return False, "Database is not available.", None
     try:
         taken = session.scalars(select(AppUserORM).where(AppUserORM.login_id == login_id)).first()
         if taken:
-            return False, "That user ID is already taken."
+            return False, "That user ID is already taken.", None
         user = AppUserORM(
             first_name=(first_name or "").strip() or "User",
             last_name=(last_name or "").strip() or "",
@@ -46,10 +46,23 @@ def create_user(first_name: str, last_name: str, login_id: str, password: str) -
             )
         )
         session.commit()
-        return True, ""
+        new_id = user.id
+        return True, "", new_id
     except Exception as e:
         session.rollback()
-        return False, str(e) or "Could not create account."
+        return False, str(e) or "Could not create account.", None
+    finally:
+        session.close()
+
+
+def count_users() -> int:
+    """Return number of application user accounts."""
+    session = _open_session()
+    if session is None:
+        return 0
+    try:
+        n = session.scalar(select(func.count()).select_from(AppUserORM))
+        return int(n or 0)
     finally:
         session.close()
 

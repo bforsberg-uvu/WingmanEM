@@ -28,6 +28,25 @@ def _sqlite_enable_foreign_keys(dbapi_conn, connection_record) -> None:
 _SessionLocal: sessionmaker[Session] | None = None
 
 
+def _apply_owner_user_id_migrations(engine) -> None:
+    """Add owner_user_id to direct_reports and management_tips if missing (SQLite)."""
+    try:
+        with engine.begin() as conn:
+            for table in ("direct_reports", "management_tips"):
+                rows = conn.execute(text(f"PRAGMA table_info({table})")).fetchall()
+                col_names = {row[1] for row in rows}
+                if "owner_user_id" in col_names:
+                    continue
+                try:
+                    conn.execute(
+                        text(f"ALTER TABLE {table} ADD COLUMN owner_user_id INTEGER REFERENCES users(id)")
+                    )
+                except Exception:
+                    pass
+    except Exception:
+        pass
+
+
 def _migrate_sqlite_legacy_tables(engine) -> None:
     """Rename legacy SQLite tables when ORM table names change (idempotent)."""
     try:
@@ -76,6 +95,7 @@ def init_engine(database_path: str) -> bool:
         )
         _migrate_sqlite_legacy_tables(_engine)
         Base.metadata.create_all(bind=_engine)
+        _apply_owner_user_id_migrations(_engine)
         _SessionLocal = sessionmaker(bind=_engine, autoflush=False, autocommit=False, expire_on_commit=False)
         return True
     except Exception:

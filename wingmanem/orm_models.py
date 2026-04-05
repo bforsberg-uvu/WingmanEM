@@ -57,6 +57,7 @@ class DirectReportORM(Base):
     current_role: Mapped[str | None] = mapped_column(Text, nullable=True)
     role_start_date: Mapped[str | None] = mapped_column(Text, nullable=True)
     partner_name: Mapped[str | None] = mapped_column(Text, nullable=True)
+    owner_user_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("users.id"), nullable=True)
 
 
 class ManagementTipORM(Base):
@@ -65,6 +66,7 @@ class ManagementTipORM(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     date: Mapped[str] = mapped_column(Text, nullable=False)
     text: Mapped[str] = mapped_column(Text, nullable=False)
+    owner_user_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("users.id"), nullable=True)
 
 
 class OneToOneSummaryORM(Base):

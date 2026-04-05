@@ -41,6 +41,7 @@ except ImportError:
 DIRECT_REPORT_OPTIONAL_KEYS = (
     "street_address_1", "street_address_2", "city", "state", "zipcode", "country",
     "birthday", "hire_date", "current_role", "role_start_date", "partner_name",
+    "owner_user_id",
 )
 
 # Global data
@@ -134,6 +135,7 @@ def _db_replace_direct_reports_from_list(reports: list[dict[str, Any]]) -> None:
     try:
         session.execute(delete(DirectReportORM))
         for r in reports:
+            oid = r.get("owner_user_id")
             session.add(
                 DirectReportORM(
                     id=int(r.get("id") or 0),
@@ -150,6 +152,7 @@ def _db_replace_direct_reports_from_list(reports: list[dict[str, Any]]) -> None:
                     current_role=r.get("current_role"),
                     role_start_date=r.get("role_start_date"),
                     partner_name=r.get("partner_name"),
+                    owner_user_id=int(oid) if oid is not None else None,
                 )
             )
         session.commit()
@@ -173,10 +176,12 @@ def _db_replace_management_tips_from_list(tips: list[dict[str, str]]) -> None:
     try:
         session.execute(delete(ManagementTipORM))
         for t in tips:
+            oid = t.get("owner_user_id") if isinstance(t, dict) else None
             session.add(
                 ManagementTipORM(
                     date=t.get("date") or "",
                     text=t.get("text") or "",
+                    owner_user_id=int(oid) if oid is not None else None,
                 )
             )
         session.commit()
@@ -218,6 +223,7 @@ def _db_load_direct_reports() -> list[dict[str, Any]]:
                         "current_role": row.current_role,
                         "role_start_date": row.role_start_date,
                         "partner_name": row.partner_name,
+                        "owner_user_id": row.owner_user_id,
                     }
                 )
             )
@@ -226,8 +232,177 @@ def _db_load_direct_reports() -> list[dict[str, Any]]:
         session.close()
 
 
-def _db_load_management_tips() -> list[dict[str, str]]:
-    """Load all management tips from the database as list of dicts with date and text."""
+def _db_first_user_id() -> int | None:
+    if not _db_available:
+        return None
+    from sqlalchemy import select
+
+    from wingmanem.database import get_session
+    from wingmanem.orm_models import AppUserORM
+
+    session = get_session()
+    try:
+        u = session.scalars(select(AppUserORM).order_by(AppUserORM.id).limit(1)).first()
+        return int(u.id) if u else None
+    finally:
+        session.close()
+
+
+def _db_count_app_users() -> int:
+    if not _db_available:
+        return 0
+    from sqlalchemy import func, select
+
+    from wingmanem.database import get_session
+    from wingmanem.orm_models import AppUserORM
+
+    session = get_session()
+    try:
+        n = session.scalar(select(func.count()).select_from(AppUserORM))
+        return int(n or 0)
+    finally:
+        session.close()
+
+
+def _assign_orphan_rows_to_user(user_id: int) -> None:
+    """Set NULL owner_user_id on direct_reports and management_tips to this user (first-account claim)."""
+    if not _db_available:
+        return
+    from sqlalchemy import update
+
+    from wingmanem.database import get_session
+    from wingmanem.orm_models import DirectReportORM, ManagementTipORM
+
+    session = get_session()
+    try:
+        session.execute(
+            update(DirectReportORM).where(DirectReportORM.owner_user_id.is_(None)).values(owner_user_id=user_id)
+        )
+        session.execute(
+            update(ManagementTipORM).where(ManagementTipORM.owner_user_id.is_(None)).values(owner_user_id=user_id)
+        )
+        session.commit()
+    except Exception:
+        session.rollback()
+        raise
+    finally:
+        session.close()
+
+
+def _db_next_direct_report_id() -> int:
+    if not _db_available:
+        return 1
+    from sqlalchemy import func, select
+
+    from wingmanem.database import get_session
+    from wingmanem.orm_models import DirectReportORM
+
+    session = get_session()
+    try:
+        m = session.scalar(select(func.max(DirectReportORM.id)))
+        return int(m or 0) + 1
+    finally:
+        session.close()
+
+
+def _db_load_direct_reports_for_user(owner_user_id: int) -> list[dict[str, Any]]:
+    if not _db_available:
+        return []
+    from sqlalchemy import select
+
+    from wingmanem.database import get_session
+    from wingmanem.orm_models import DirectReportORM
+
+    session = get_session()
+    try:
+        rows = session.scalars(
+            select(DirectReportORM)
+            .where(DirectReportORM.owner_user_id == owner_user_id)
+            .order_by(DirectReportORM.id)
+        ).all()
+        out: list[dict[str, Any]] = []
+        for row in rows:
+            out.append(
+                _normalize_direct_report(
+                    {
+                        "id": row.id,
+                        "first_name": row.first_name,
+                        "last_name": row.last_name,
+                        "street_address_1": row.street_address_1,
+                        "street_address_2": row.street_address_2,
+                        "city": row.city,
+                        "state": row.state,
+                        "zipcode": row.zipcode,
+                        "country": row.country,
+                        "birthday": row.birthday,
+                        "hire_date": row.hire_date,
+                        "current_role": row.current_role,
+                        "role_start_date": row.role_start_date,
+                        "partner_name": row.partner_name,
+                        "owner_user_id": row.owner_user_id,
+                    }
+                )
+            )
+        return out
+    finally:
+        session.close()
+
+
+def _db_replace_direct_reports_for_user(owner_user_id: int, reports: list[dict[str, Any]]) -> None:
+    """Replace only this user's direct_reports rows; other users' rows are unchanged."""
+    if not _db_available:
+        return
+    from sqlalchemy import delete
+
+    from wingmanem.database import get_session
+    from wingmanem.orm_models import DirectReportORM
+
+    session = get_session()
+    try:
+        session.execute(delete(DirectReportORM).where(DirectReportORM.owner_user_id == owner_user_id))
+        for r in reports:
+            oid = r.get("owner_user_id")
+            session.add(
+                DirectReportORM(
+                    id=int(r.get("id") or 0),
+                    first_name=r.get("first_name") or "",
+                    last_name=r.get("last_name") or "",
+                    street_address_1=r.get("street_address_1"),
+                    street_address_2=r.get("street_address_2"),
+                    city=r.get("city"),
+                    state=r.get("state"),
+                    zipcode=r.get("zipcode"),
+                    country=r.get("country"),
+                    birthday=r.get("birthday"),
+                    hire_date=r.get("hire_date"),
+                    current_role=r.get("current_role"),
+                    role_start_date=r.get("role_start_date"),
+                    partner_name=r.get("partner_name"),
+                    owner_user_id=int(oid) if oid is not None else owner_user_id,
+                )
+            )
+        session.commit()
+    except Exception:
+        session.rollback()
+        raise
+    finally:
+        session.close()
+
+
+def _save_direct_reports_for_user(owner_user_id: int, reports: list[dict[str, Any]]) -> None:
+    """Persist one tenant's direct reports to SQLite."""
+    if not _db_available:
+        return
+    try:
+        for r in reports:
+            r["owner_user_id"] = owner_user_id
+        _db_replace_direct_reports_for_user(owner_user_id, reports)
+    except Exception as e:
+        print(f"Could not save direct reports for user {owner_user_id}: {e}", file=sys.stderr)
+
+
+def _db_load_management_tips() -> list[dict[str, Any]]:
+    """Load all management tips from the database as list of dicts (date, text, optional owner_user_id)."""
     if not _db_available:
         return []
     from sqlalchemy import select
@@ -238,7 +413,92 @@ def _db_load_management_tips() -> list[dict[str, str]]:
     session = get_session()
     try:
         rows = session.scalars(select(ManagementTipORM).order_by(ManagementTipORM.id)).all()
-        return [{"date": row.date, "text": row.text} for row in rows]
+        return [
+            {"date": row.date, "text": row.text, "owner_user_id": row.owner_user_id}
+            for row in rows
+        ]
+    finally:
+        session.close()
+
+
+def _db_load_management_tips_for_user(owner_user_id: int) -> list[dict[str, Any]]:
+    if not _db_available:
+        return []
+    from sqlalchemy import select
+
+    from wingmanem.database import get_session
+    from wingmanem.orm_models import ManagementTipORM
+
+    session = get_session()
+    try:
+        rows = session.scalars(
+            select(ManagementTipORM)
+            .where(ManagementTipORM.owner_user_id == owner_user_id)
+            .order_by(ManagementTipORM.id)
+        ).all()
+        return [{"date": row.date, "text": row.text, "owner_user_id": row.owner_user_id} for row in rows]
+    finally:
+        session.close()
+
+
+def _get_latest_management_tip_for_user(owner_user_id: int) -> str:
+    if not _db_available:
+        return "No tip yet. Generate one from Mistral AI."
+    from sqlalchemy import select
+
+    from wingmanem.database import get_session
+    from wingmanem.orm_models import ManagementTipORM
+
+    session = get_session()
+    try:
+        row = session.scalars(
+            select(ManagementTipORM)
+            .where(ManagementTipORM.owner_user_id == owner_user_id)
+            .order_by(ManagementTipORM.id.desc())
+            .limit(1)
+        ).first()
+        if row:
+            return row.text
+        return "No tip yet. Generate one from Mistral AI."
+    finally:
+        session.close()
+
+
+def _user_has_management_tip_for_date(owner_user_id: int, date_str: str) -> bool:
+    """True if this user already has at least one tip row for the given calendar day (YYYY-MM-DD)."""
+    tips = _db_load_management_tips_for_user(owner_user_id)
+    prefix = (date_str or "")[:10]
+    for t in tips:
+        if str(t.get("date") or "")[:10] == prefix:
+            return True
+    return False
+
+
+def _ensure_daily_management_tip_for_user(owner_user_id: int) -> None:
+    """If Mistral is configured and the user has no tip for today, generate one owned by that user."""
+    if not _db_available or not owner_user_id:
+        return
+    today_str = date.today().isoformat()
+    if _user_has_management_tip_for_date(owner_user_id, today_str):
+        return
+    if not MISTRAL_AVAILABLE or not _get_mistral_api_key():
+        return
+    _generate_management_tip_with_ai(silent=True, owner_user_id=owner_user_id)
+
+
+def _db_insert_management_tip(owner_user_id: int | None, date_str: str, text: str) -> None:
+    if not _db_available:
+        return
+    from wingmanem.database import get_session
+    from wingmanem.orm_models import ManagementTipORM
+
+    session = get_session()
+    try:
+        session.add(ManagementTipORM(date=date_str, text=text, owner_user_id=owner_user_id))
+        session.commit()
+    except Exception:
+        session.rollback()
+        raise
     finally:
         session.close()
 
@@ -265,6 +525,11 @@ def _db_populate_from_json_files() -> None:
                 data = json.load(f)
             raw = data if isinstance(data, list) else []
             reports = [_normalize_direct_report(r) for r in raw if isinstance(r, dict)]
+            seed_owner = _db_first_user_id()
+            if seed_owner is not None:
+                for r in reports:
+                    if r.get("owner_user_id") is None:
+                        r["owner_user_id"] = seed_owner
             if reports:
                 _db_replace_direct_reports_from_list(reports)
         except (json.JSONDecodeError, OSError):
@@ -280,6 +545,11 @@ def _db_populate_from_json_files() -> None:
                         tips.append({"date": str(item["date"])[:10], "text": str(item["text"]).strip()})
                     elif isinstance(item, str) and item.strip():
                         tips.append({"date": date.today().isoformat(), "text": item.strip()})
+            tip_owner = _db_first_user_id()
+            if tip_owner is not None:
+                for t in tips:
+                    if isinstance(t, dict) and t.get("owner_user_id") is None:
+                        t["owner_user_id"] = tip_owner
             if tips:
                 _db_replace_management_tips_from_list(tips)
         except (json.JSONDecodeError, OSError):
@@ -578,6 +848,43 @@ def _db_replace_goals_from_list(goals: list[dict[str, Any]]) -> None:
         session.close()
 
 
+def _report_ids_owned_by_user(owner_user_id: int) -> set[int]:
+    return {int(r["id"]) for r in _db_load_direct_reports_for_user(owner_user_id) if r.get("id") is not None}
+
+
+def user_owns_direct_report(owner_user_id: int, report_id: int) -> bool:
+    """True if report_id belongs to this application user (web authorization)."""
+    try:
+        return int(report_id) in _report_ids_owned_by_user(owner_user_id)
+    except (TypeError, ValueError):
+        return False
+
+
+def _load_direct_report_goals_for_user(owner_user_id: int) -> list[dict[str, Any]]:
+    rids = _report_ids_owned_by_user(owner_user_id)
+    if not rids:
+        return []
+    all_goals = _db_load_all_goals()
+    return [g for g in all_goals if int(g.get("direct_report_id") or 0) in rids]
+
+
+def _save_direct_report_goals_for_user(owner_user_id: int, goals: list[dict[str, Any]]) -> None:
+    rids = _report_ids_owned_by_user(owner_user_id)
+    others = [g for g in _db_load_all_goals() if int(g.get("direct_report_id") or 0) not in rids]
+    merged = others + list(goals)
+    _save_direct_report_goals(merged)
+
+
+def _delete_all_goals_for_user(owner_user_id: int) -> None:
+    rids = _report_ids_owned_by_user(owner_user_id)
+    merged = [g for g in _db_load_all_goals() if int(g.get("direct_report_id") or 0) not in rids]
+    _save_direct_report_goals(merged)
+
+
+def _next_goal_id_global() -> int:
+    return _next_goal_id(_db_load_all_goals())
+
+
 def _db_load_direct_report_comp_data() -> list[dict[str, Any]]:
     """Load all rows from direct-report comp data as dicts (shape used by comp letter templates)."""
     if not _db_available:
@@ -622,6 +929,50 @@ def _db_replace_direct_report_comp_data_from_list(records: list[dict[str, Any]])
     session = get_session()
     try:
         session.execute(delete(DirectReportCompDataORM))
+        for rec in records:
+            if not isinstance(rec, dict):
+                continue
+            session.add(
+                DirectReportCompDataORM(
+                    direct_report_id=int(rec.get("direct_report_id") or 0),
+                    first_name=str(rec.get("first_name") or ""),
+                    last_name=str(rec.get("last_name") or ""),
+                    rating=int(rec.get("rating") or 0),
+                    salary=int(rec.get("salary") or 0),
+                    percent_change=float(rec.get("percent_change") or 0.0),
+                    dollar_change=int(rec.get("dollar_change") or 0),
+                    new_salary=int(rec.get("new_salary") or 0),
+                    bonus=int(rec.get("bonus") or 0),
+                )
+            )
+        session.commit()
+    except Exception:
+        session.rollback()
+        raise
+    finally:
+        session.close()
+
+
+def _db_load_direct_report_comp_data_for_user(owner_user_id: int) -> list[dict[str, Any]]:
+    rids = _report_ids_owned_by_user(owner_user_id)
+    if not rids:
+        return []
+    return [row for row in _db_load_direct_report_comp_data() if int(row.get("direct_report_id") or 0) in rids]
+
+
+def _db_merge_replace_comp_data_for_user(owner_user_id: int, records: list[dict[str, Any]]) -> None:
+    if not _db_available:
+        return
+    rids = _report_ids_owned_by_user(owner_user_id)
+    from sqlalchemy import delete
+
+    from wingmanem.database import get_session
+    from wingmanem.orm_models import DirectReportCompDataORM
+
+    session = get_session()
+    try:
+        if rids:
+            session.execute(delete(DirectReportCompDataORM).where(DirectReportCompDataORM.direct_report_id.in_(rids)))
         for rec in records:
             if not isinstance(rec, dict):
                 continue
@@ -906,6 +1257,117 @@ Output only this JSON object, no other text."""
         return 0
 
 
+def _generate_goals_with_ai_for_user(owner_user_id: int, num: int) -> int:
+    """Like _generate_goals_with_ai but only for direct reports owned by owner_user_id."""
+    if not MISTRAL_AVAILABLE:
+        return 0
+    api_key = _get_mistral_api_key()
+    if not api_key:
+        return 0
+    direct_reports_local = _db_load_direct_reports_for_user(owner_user_id)
+    if not direct_reports_local:
+        return 0
+    num = max(1, min(20, num))
+    report_list = [
+        {"id": r.get("id"), "first_name": r.get("first_name", ""), "last_name": r.get("last_name", "")}
+        for r in direct_reports_local[:50]
+        if r.get("id")
+    ]
+    if not report_list:
+        return 0
+    ids_str = ", ".join(str(r["id"]) for r in report_list)
+    names_str = ", ".join(f"{r['first_name']} {r['last_name']} (id {r['id']})" for r in report_list)
+    prompt = f"""Generate exactly {num} realistic professional development goals for engineering direct reports.
+
+Available direct reports (use only these IDs): {names_str}
+Valid direct_report_id values: {ids_str}
+
+Return a single JSON object with key "goals" whose value is an array of {num} objects. Each object must have:
+- direct_report_id (integer, must be one of {ids_str})
+- goal_title (string, max 50 chars, e.g. "Complete AWS certification")
+- goal_description (string, max 100 chars)
+- goal_completion_date (string YYYY-MM-DD, or empty string for optional)
+
+Distribute goals across different direct reports. Example:
+{{"goals": [{{"direct_report_id": 1, "goal_title": "Complete AWS certification", "goal_description": "Pass AWS Solutions Architect exam by Q2", "goal_completion_date": "2025-06-30"}}, ...]}}
+
+Output only this JSON object, no other text."""
+
+    try:
+        client = Mistral(api_key=api_key)
+        valid_ids = {r["id"] for r in report_list}
+        try:
+            message = client.chat.complete(
+                model="mistral-large-latest",
+                messages=[{"role": "user", "content": prompt}],
+                response_format={"type": "json_object"},
+            )
+        except TypeError:
+            message = client.chat.complete(
+                model="mistral-large-latest",
+                messages=[{"role": "user", "content": prompt}],
+            )
+        raw = message.choices[0].message.content
+        if isinstance(raw, list):
+            raw = "".join(
+                p.get("text", p.get("content", "")) if isinstance(p, dict) else str(p)
+                for p in raw
+            )
+        else:
+            raw = raw or ""
+        response_text = raw.strip()
+        if response_text.startswith("```"):
+            end = response_text.find("\n", 3)
+            if end != -1:
+                response_text = response_text[end + 1 :].rstrip()
+            if response_text.endswith("```"):
+                response_text = response_text[:-3].rstrip()
+
+        objects: list[dict] = []
+        try:
+            parsed = json.loads(response_text)
+            if isinstance(parsed, dict):
+                arr = parsed.get("goals") or parsed.get("goals_list")
+                if isinstance(arr, list):
+                    objects = [x for x in arr if isinstance(x, dict)]
+                if not objects:
+                    for v in parsed.values():
+                        if isinstance(v, list) and v and isinstance(v[0], dict):
+                            objects = [x for x in v if isinstance(x, dict)]
+                            break
+            elif isinstance(parsed, list):
+                objects = [x for x in parsed if isinstance(x, dict)]
+        except (json.JSONDecodeError, TypeError):
+            pass
+
+        goals = _load_direct_report_goals_for_user(owner_user_id)
+        next_id = _next_goal_id_global()
+        added = 0
+        for obj in objects:
+            rid = obj.get("direct_report_id")
+            if rid is None or int(rid) not in valid_ids:
+                continue
+            title = str(obj.get("goal_title") or "")[:50]
+            desc = str(obj.get("goal_description") or "")[:100]
+            comp = str(obj.get("goal_completion_date") or "")[:10]
+            goals.append(
+                {
+                    "id": next_id,
+                    "direct_report_id": int(rid),
+                    "goal_title": title,
+                    "goal_description": desc,
+                    "goal_completion_date": comp,
+                }
+            )
+            next_id += 1
+            added += 1
+        if added > 0:
+            _save_direct_report_goals_for_user(owner_user_id, goals)
+        return added
+    except Exception:
+        return 0
+
+
 def _generate_direct_report_comp_statements() -> list[dict[str, Any]]:
     """Generate compensation data for direct reports; persist to DB then JSON mirror."""
     if not direct_reports:
@@ -966,6 +1428,65 @@ def _generate_direct_report_comp_statements() -> list[dict[str, Any]]:
         pass
     try:
         _write_direct_report_comp_data_json_file(statements)
+    except OSError:
+        pass
+    return statements
+
+
+def _generate_direct_report_comp_statements_for_user(owner_user_id: int) -> list[dict[str, Any]]:
+    """Generate compensation rows only for this user's direct reports; merge into comp table."""
+    reports = _db_load_direct_reports_for_user(owner_user_id)
+    if not reports:
+        _db_merge_replace_comp_data_for_user(owner_user_id, [])
+        try:
+            _write_direct_report_comp_data_json_file(_db_load_direct_report_comp_data())
+        except OSError:
+            pass
+        return []
+    statements: list[dict[str, Any]] = []
+    for r in reports:
+        rid = r.get("id")
+        if not rid:
+            continue
+        first = (r.get("first_name") or "").strip() or "Unknown"
+        last = (r.get("last_name") or "").strip() or "Direct Report"
+        rating = random.randint(1, 5)
+        salary = random.randint(90000, 200000)
+        if rating == 5:
+            pct = random.uniform(8.0, 12.0)
+        elif rating == 4:
+            pct = random.uniform(5.0, 8.0)
+        elif rating == 3:
+            pct = random.uniform(3.0, 5.0)
+        elif rating == 2:
+            pct = random.uniform(1.0, 3.0)
+        else:
+            pct = random.uniform(0.0, 1.0)
+        dollar_change = int(round(salary * (pct / 100.0)))
+        new_salary = salary + dollar_change
+        base_bonus = 10000 + (rating - 1) * 5000
+        max_bonus = base_bonus + 5000
+        bonus = random.randint(base_bonus, max_bonus)
+        bonus = max(10000, min(30000, bonus))
+        statements.append(
+            {
+                "direct_report_id": int(rid),
+                "first_name": first,
+                "last_name": last,
+                "rating": rating,
+                "salary": salary,
+                "percent_change": round(pct, 2),
+                "dollar_change": dollar_change,
+                "new_salary": new_salary,
+                "bonus": bonus,
+            }
+        )
+    try:
+        _db_merge_replace_comp_data_for_user(owner_user_id, statements)
+    except Exception:
+        pass
+    try:
+        _write_direct_report_comp_data_json_file(_db_load_direct_report_comp_data())
     except OSError:
         pass
     return statements
@@ -1508,6 +2029,100 @@ Output only this JSON object, no other text."""
         print("Example: export MISTRAL_API_KEY=your_key_here")
 
 
+def _generate_direct_reports_with_ai_for_user(owner_user_id: int, num: int) -> int:
+    """Web: generate up to num Mistral direct reports owned by owner_user_id. Returns count added."""
+    if not MISTRAL_AVAILABLE:
+        return 0
+    api_key = _get_mistral_api_key()
+    if not api_key:
+        return 0
+    num = max(1, min(10, int(num)))
+    current = _db_load_direct_reports_for_user(owner_user_id)
+    try:
+        client = Mistral(api_key=api_key)
+        existing_names = {_direct_report_name_key(r) for r in current}
+        avoid_names_instruction = ""
+        if existing_names:
+            names_list = [f"{r.get('first_name', '')} {r.get('last_name', '')}".strip() for r in current[:30]]
+            avoid_names_instruction = f"\nDo NOT create any person with the same first and last name as any of these existing people: {names_list}. All new reports must have unique first and last names."
+        prompt = f"""Generate exactly {num} realistic direct reports for a manager. Each report should have a diverse, realistic background.{avoid_names_instruction}
+
+Return a single JSON object with a key "reports" whose value is an array of {num} objects. Each object must have exactly these keys (use null for optional fields if needed): first_name, last_name, street_address_1, street_address_2, city, state, zipcode, country, birthday, hire_date, current_role, role_start_date, partner_name. Dates must be YYYY-MM-DD. Each person must have a unique first_name and last_name combination. Example structure:
+{{"reports": [{{"first_name": "Jane", "last_name": "Doe", "street_address_1": "123 Main St", "street_address_2": null, "city": "Boston", "state": "MA", "zipcode": "02101", "country": "USA", "birthday": "1990-05-15", "hire_date": "2021-03-01", "current_role": "Senior Engineer", "role_start_date": "2023-01-01", "partner_name": null}}, ...]}}
+
+Output only this JSON object, no other text."""
+        try:
+            message = client.chat.complete(
+                model="mistral-large-latest",
+                messages=[{"role": "user", "content": prompt}],
+                response_format={"type": "json_object"},
+            )
+        except TypeError:
+            message = client.chat.complete(
+                model="mistral-large-latest",
+                messages=[{"role": "user", "content": prompt}],
+            )
+        msg_content = message.choices[0].message.content
+        if isinstance(msg_content, list):
+            raw = "".join(
+                p.get("text", p.get("content", "")) if isinstance(p, dict) else str(p)
+                for p in msg_content
+            )
+        else:
+            raw = msg_content or ""
+        response_text = raw.strip()
+        if response_text.startswith("```"):
+            end = response_text.find("\n", 3)
+            if end != -1:
+                response_text = response_text[end + 1 :].rstrip()
+            if response_text.endswith("```"):
+                response_text = response_text[:-3].rstrip()
+
+        objects: list[dict] = []
+        try:
+            parsed = json.loads(response_text)
+            if isinstance(parsed, dict):
+                arr = parsed.get("reports") or parsed.get("direct_reports")
+                if isinstance(arr, list):
+                    objects = [x for x in arr if isinstance(x, dict)]
+                if not objects:
+                    for v in parsed.values():
+                        if isinstance(v, list) and v and isinstance(v[0], dict):
+                            objects = [x for x in v if isinstance(x, dict)]
+                            break
+            elif isinstance(parsed, list):
+                objects = [x for x in parsed if isinstance(x, dict)]
+        except (json.JSONDecodeError, TypeError):
+            pass
+
+        keys_already_used = set(existing_names)
+        added_count = 0
+        merged = list(current)
+        next_id = _db_next_direct_report_id()
+        for data in objects:
+            if _is_duplicate_direct_report(data, keys_already_used):
+                continue
+            try:
+                report = _normalize_direct_report(
+                    {
+                        "id": next_id,
+                        **data,
+                        "owner_user_id": owner_user_id,
+                    }
+                )
+                merged.append(report)
+                keys_already_used.add(_direct_report_name_key(report))
+                next_id += 1
+                added_count += 1
+            except (ValueError, TypeError):
+                pass
+        if added_count > 0:
+            _save_direct_reports_for_user(owner_user_id, merged)
+        return added_count
+    except Exception:
+        return 0
+
+
 def _purge_direct_reports() -> None | bool:
     """Purge all direct reports after confirmation."""
     _list_direct_reports()
@@ -1544,7 +2159,13 @@ def _load_management_tips() -> None:
             last_date = management_tips[-1]["date"] if management_tips else None
             need_new_tip = not management_tips or last_date != today_str
             if need_new_tip and MISTRAL_AVAILABLE and _get_mistral_api_key():
-                _generate_management_tip_with_ai(silent=True)
+                n_users = _db_count_app_users()
+                if n_users == 0:
+                    _generate_management_tip_with_ai(silent=True, owner_user_id=None)
+                elif n_users == 1:
+                    uid = _db_first_user_id()
+                    if uid is not None:
+                        _generate_management_tip_with_ai(silent=True, owner_user_id=uid)
             return
     if not os.path.isfile(MANAGEMENT_TIPS_FILE):
         management_tips = []
@@ -1573,7 +2194,13 @@ def _load_management_tips() -> None:
     last_date = management_tips[-1]["date"] if management_tips else None
     need_new_tip = not management_tips or last_date != today_str
     if need_new_tip and MISTRAL_AVAILABLE and _get_mistral_api_key():
-        _generate_management_tip_with_ai(silent=True)
+        n_users = _db_count_app_users()
+        if n_users == 0:
+            _generate_management_tip_with_ai(silent=True, owner_user_id=None)
+        elif n_users == 1:
+            uid = _db_first_user_id()
+            if uid is not None:
+                _generate_management_tip_with_ai(silent=True, owner_user_id=uid)
 
 
 def _save_management_tips() -> None:
@@ -1598,21 +2225,27 @@ def _normalize_tip_for_comparison(tip: str) -> str:
     return " ".join(tip.lower().split())
 
 
-def _is_duplicate_management_tip(text: str) -> bool:
-    """Return True if the tip text is effectively a duplicate of any existing tip in management_tips."""
+def _is_duplicate_management_tip_against(text: str, entries: list[dict[str, Any]]) -> bool:
+    """Return True if tip text matches any entry's text (normalized)."""
     if not text:
         return False
     normalized_new = _normalize_tip_for_comparison(text)
-    for entry in management_tips:
-        if _normalize_tip_for_comparison(entry["text"]) == normalized_new:
+    for entry in entries:
+        if _normalize_tip_for_comparison(str(entry.get("text") or "")) == normalized_new:
             return True
     return False
 
 
-def _generate_management_tip_with_ai(*, silent: bool = False) -> bool:
+def _is_duplicate_management_tip(text: str) -> bool:
+    """Return True if the tip text is effectively a duplicate of any existing tip in management_tips."""
+    return _is_duplicate_management_tip_against(text, management_tips)
+
+
+def _generate_management_tip_with_ai(*, silent: bool = False, owner_user_id: int | None = None) -> bool:
     """Generate one daily management tip using Mistral AI; append and save. Returns True on success.
     If the suggested tip is a duplicate of an existing one, requests a different tip (up to a few retries).
-    If silent is True, do not print success message (e.g. when seeding on startup)."""
+    If silent is True, do not print success message (e.g. when seeding on startup).
+    When owner_user_id is set, the row is stored for that user only (web multi-tenant). When None, owner is NULL (CLI / pre-auth)."""
     global management_tips
     if not MISTRAL_AVAILABLE:
         if not silent:
@@ -1626,10 +2259,15 @@ def _generate_management_tip_with_ai(*, silent: bool = False) -> bool:
     base_prompt = """Generate exactly one short, actionable daily management tip for an engineering manager.
 Keep it to one or two sentences. No bullet points or numbering. Output only the tip text, nothing else."""
     max_attempts = 5
+    tip_history: list[dict[str, Any]]
+    if owner_user_id is not None:
+        tip_history = _db_load_management_tips_for_user(owner_user_id)
+    else:
+        tip_history = list(management_tips)
     try:
         client = Mistral(api_key=api_key)
         for attempt in range(max_attempts):
-            avoid_all = [e["text"] for e in management_tips[-20:]]
+            avoid_all = [e["text"] for e in tip_history[-20:]]
             if avoid_all:
                 avoid = "; ".join(repr(t) for t in avoid_all)
                 prompt = f"""{base_prompt}
@@ -1657,10 +2295,18 @@ Focus specifically on: {theme}. Give one concrete tip (not generic advice like "
                 if not silent and attempt == max_attempts - 1:
                     print("\nMistral AI returned an empty tip.")
                 continue
-            if _is_duplicate_management_tip(text):
+            if _is_duplicate_management_tip_against(text, tip_history):
                 continue
-            management_tips.append({"date": date.today().isoformat(), "text": text})
-            _save_management_tips()
+            d = date.today().isoformat()
+            _db_insert_management_tip(owner_user_id, d, text)
+            management_tips.clear()
+            management_tips.extend(_db_load_management_tips())
+            try:
+                _write_management_tips_json_file(
+                    [{"date": x["date"], "text": x["text"]} for x in management_tips]
+                )
+            except OSError:
+                pass
             if not silent:
                 print(f"\nDaily tip generated: {text}")
             return True
