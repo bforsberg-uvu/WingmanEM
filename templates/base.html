@@ -40,9 +40,19 @@
   </div>
 
   <div class="container page-enter">
-    <header class="app-header">
-      <h1>WingmanEM</h1>
-      <p class="sub">Engineering Manager</p>
+    <header class="app-header{% if current_user.is_authenticated %} app-header-with-user{% endif %}">
+      <div class="app-header-brand">
+        <h1>WingmanEM</h1>
+        <p class="sub">Engineering Manager</p>
+      </div>
+      {% if current_user.is_authenticated %}
+      <div class="app-header-user">
+        <span class="greeting" aria-live="polite">Hello, {{ current_user.first_name }}</span>
+        <form method="post" action="{{ url_for('logout') }}" class="logout-form">
+          <button type="submit" class="btn btn-small">Log out</button>
+        </form>
+      </div>
+      {% endif %}
     </header>
     {% block breadcrumb %}{% endblock %}
     {% block content %}{% endblock %}

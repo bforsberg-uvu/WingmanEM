@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block title %}Delete application user — WingmanEM{% endblock %}
+
+{% block breadcrumb %}
+  <div class="breadcrumb"><a href="{{ url_for('index') }}">Main</a> → <a href="{{ url_for('developer_menu') }}">Developer</a> → <a href="{{ url_for('developer_system_users') }}">System users</a> → Delete</div>
+{% endblock %}
+
+{% block content %}
+  <h2 style="margin-bottom: 1rem;">Delete application user?</h2>
+  <p style="margin-bottom: 1rem; line-height: 1.6;">
+    You are about to permanently remove <strong>{{ user_row.first_name }} {{ user_row.last_name }}</strong>
+    (User ID <strong>{{ user_row.login_id }}</strong>, internal ID {{ user_id }}). Their login and password row will be removed.
+  </p>
+  <p class="text-muted" style="margin-bottom: 1.5rem;">Choose Cancel to keep this account.</p>
+  <div class="form-actions">
+    <form method="post" action="{{ url_for('developer_delete_application_user', user_id=user_id) }}" style="display: inline;">
+      <button type="submit" class="btn btn-danger">Yes, delete user</button>
+    </form>
+    <a href="{{ url_for('developer_system_users') }}" class="btn">Cancel</a>
+  </div>
+{% endblock %}

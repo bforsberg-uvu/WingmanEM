@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+{% block title %}System users — Developer — WingmanEM{% endblock %}
+
+{% block breadcrumb %}
+  <div class="breadcrumb"><a href="{{ url_for('index') }}">Main</a> → <a href="{{ url_for('developer_menu') }}">Developer</a> → System users</div>
+{% endblock %}
+
+{% block content %}
+  <h2 style="margin-bottom: 0.5rem;">Application users</h2>
+  <p class="text-muted" style="margin-bottom: 1rem;">Rows from <code>users</code> joined with <code>user_passwords</code> (Werkzeug password hash). For debugging only. You cannot delete your own account.</p>
+
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+      <div class="flash-messages" style="margin-bottom: 1rem;">
+        {% for cat, msg in messages %}
+          <div class="flash flash-{{ cat }}">{{ msg }}</div>
+        {% endfor %}
+      </div>
+    {% endif %}
+  {% endwith %}
+
+  <div class="table-wrap table-wrap-fit-viewport">
+    <table class="table-system-users">
+      <thead>
+        <tr>
+          <th>ID</th>
+          <th>First name</th>
+          <th>Last name</th>
+          <th>User ID (login)</th>
+          <th>Password hash</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% if users %}
+        {% for u in users %}
+        <tr>
+          <td>{{ u.id }}</td>
+          <td>{{ u.first_name }}</td>
+          <td>{{ u.last_name }}</td>
+          <td>{{ u.login_id }}</td>
+          <td class="cell-hash"><code>{{ u.password_hash or '—' }}</code></td>
+          <td class="table-actions">
+            {% if u.id == current_user.id %}
+            <span class="text-muted" style="font-size: 0.85rem;">Current user</span>
+            {% else %}
+            <a href="{{ url_for('developer_delete_application_user', user_id=u.id) }}" class="btn btn-danger btn-small">Delete</a>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+        {% else %}
+        <tr class="table-empty-row">
+          <td colspan="6">No application users yet. Use <a href="{{ url_for('register') }}">Create account</a> on the log-in page.</td>
+        </tr>
+        {% endif %}
+      </tbody>
+    </table>
+  </div>
+
+  <p style="margin-top: 1rem;">
+    <a href="{{ url_for('developer_schema') }}" class="btn">Schema &amp; ORM</a>
+    <a href="{{ url_for('developer_menu') }}" class="btn">← Developer menu</a>
+  </p>
+{% endblock %}

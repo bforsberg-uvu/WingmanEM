@@ -6,12 +6,38 @@ Table names match the legacy sqlite3 schema for compatibility.
 
 from __future__ import annotations
 
-from sqlalchemy import Float, Integer, Text
+from sqlalchemy import Float, ForeignKey, Integer, Text
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
 class Base(DeclarativeBase):
     pass
+
+
+class AppUserORM(Base):
+    """Application login accounts (table `users`). `login_id` is the user-facing ID typed at login."""
+
+    __tablename__ = "users"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    first_name: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    last_name: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    login_id: Mapped[str] = mapped_column(Text, unique=True, nullable=False)
+
+
+class UserPasswordORM(Base):
+    """One hashed password per user; FK to users.id with ON DELETE CASCADE."""
+
+    __tablename__ = "user_passwords"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("users.id", ondelete="CASCADE"),
+        unique=True,
+        nullable=False,
+    )
+    password_hash: Mapped[str] = mapped_column(Text, nullable=False)
 
 
 class DirectReportORM(Base):

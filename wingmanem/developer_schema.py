@@ -45,6 +45,19 @@ SQL_GOALS = """CREATE TABLE IF NOT EXISTS direct_report_goals (
     goal_completion_date TEXT
 );"""
 
+SQL_USERS = """CREATE TABLE IF NOT EXISTS users (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    first_name TEXT NOT NULL DEFAULT '',
+    last_name TEXT NOT NULL DEFAULT '',
+    login_id TEXT NOT NULL UNIQUE
+);"""
+
+SQL_USER_PASSWORDS = """CREATE TABLE IF NOT EXISTS user_passwords (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL UNIQUE REFERENCES users(id) ON DELETE CASCADE,
+    password_hash TEXT NOT NULL
+);"""
+
 SQL_DIRECT_REPORT_COMP = """CREATE TABLE IF NOT EXISTS direct_report_comp_data (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     direct_report_id INTEGER NOT NULL,
@@ -62,6 +75,8 @@ SQL_DIRECT_REPORT_COMP = """CREATE TABLE IF NOT EXISTS direct_report_comp_data (
 def build_schema_model_pairs() -> list[dict[str, str]]:
     """Return list of {title, sql, model_py} for side-by-side display."""
     specs = [
+        ("users", SQL_USERS, orm_models.AppUserORM),
+        ("user_passwords", SQL_USER_PASSWORDS, orm_models.UserPasswordORM),
         ("direct_reports", SQL_DIRECT_REPORTS, orm_models.DirectReportORM),
         ("management_tips", SQL_MANAGEMENT_TIPS, orm_models.ManagementTipORM),
         ("one_to_one_summaries", SQL_ONE_TO_ONE, orm_models.OneToOneSummaryORM),

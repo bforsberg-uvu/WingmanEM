@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block title %}Create account — WingmanEM{% endblock %}
+
+{% block content %}
+  <h2 style="margin-bottom: 1rem;">Create account</h2>
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+      <div class="flash-messages" style="margin-bottom: 1rem;">
+        {% for cat, msg in messages %}
+          <div class="flash flash-{{ cat }}">{{ msg }}</div>
+        {% endfor %}
+      </div>
+    {% endif %}
+  {% endwith %}
+  <form method="post" action="{{ url_for('register') }}" class="auth-form">
+    <label for="first_name">First name</label>
+    <input type="text" id="first_name" name="first_name" required autocomplete="given-name">
+    <label for="last_name">Last name</label>
+    <input type="text" id="last_name" name="last_name" required autocomplete="family-name">
+    <label for="user_id">User ID</label>
+    <input type="text" id="user_id" name="user_id" required autocomplete="username">
+    <label for="password">Password</label>
+    <input type="password" id="password" name="password" required autocomplete="new-password">
+    <label for="password_confirm">Confirm password</label>
+    <input type="password" id="password_confirm" name="password_confirm" required autocomplete="new-password">
+    <div class="form-actions">
+      <button type="submit" class="btn btn-primary">Create account</button>
+      <a href="{{ url_for('login') }}" class="btn">Back to log in</a>
+    </div>
+  </form>
+{% endblock %}

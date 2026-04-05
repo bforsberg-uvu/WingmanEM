@@ -6,12 +6,25 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from sqlalchemy import create_engine, text
+from sqlalchemy import create_engine, event, text
+from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session, sessionmaker
 
 from wingmanem.orm_models import Base
 
 _engine = None
+
+
+@event.listens_for(Engine, "connect")
+def _sqlite_enable_foreign_keys(dbapi_conn, connection_record) -> None:
+    # SQLAlchemy 2.x: connection_record may not expose .dialect; detect sqlite driver.
+    if "sqlite" not in type(dbapi_conn).__module__:
+        return
+    cursor = dbapi_conn.cursor()
+    cursor.execute("PRAGMA foreign_keys=ON")
+    cursor.close()
+
+
 _SessionLocal: sessionmaker[Session] | None = None
 
 

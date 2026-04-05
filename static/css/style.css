@@ -89,10 +89,36 @@ a:hover {
 
 /* Header */
 .app-header {
-  text-align: center;
   padding: 1.5rem 0;
   border-bottom: 1px solid var(--border);
   margin-bottom: 1.5rem;
+}
+.app-header-brand {
+  text-align: center;
+}
+.app-header-with-user {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+.app-header-with-user .app-header-brand {
+  text-align: left;
+}
+.app-header-user {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-shrink: 0;
+}
+.app-header-user .greeting {
+  font-size: 0.95rem;
+  color: var(--text-primary);
+}
+.logout-form {
+  margin: 0;
+  display: inline;
 }
 .app-header h1 {
   margin: 0;
@@ -104,6 +130,101 @@ a:hover {
   color: var(--text-muted);
   font-size: 0.9rem;
   margin-top: 0.25rem;
+}
+
+/* Auth / flash */
+.auth-form {
+  max-width: 22rem;
+}
+.flash-messages {
+  max-width: 28rem;
+}
+.flash {
+  padding: 0.65rem 0.85rem;
+  border-radius: 8px;
+  font-size: 0.9rem;
+  margin-bottom: 0.5rem;
+}
+.flash-error {
+  background: rgba(248, 113, 113, 0.12);
+  border: 1px solid var(--accent-red);
+  color: var(--text-primary);
+}
+.flash-success {
+  background: rgba(34, 197, 94, 0.12);
+  border: 1px solid rgba(34, 197, 94, 0.45);
+  color: var(--text-primary);
+}
+
+.table-wrap td.cell-hash code {
+  font-size: 0.72rem;
+  word-break: break-all;
+  white-space: pre-wrap;
+}
+
+/* System users (developer): table stays within the content width; hash column
+   shrinks/wraps so Delete stays visible without horizontal scroll */
+.table-wrap.table-wrap-fit-viewport {
+  overflow-x: hidden;
+}
+.table-wrap.table-wrap-fit-viewport table.table-system-users {
+  min-width: 0;
+  max-width: 100%;
+  width: 100%;
+  table-layout: fixed;
+}
+.table-wrap.table-wrap-fit-viewport .table-system-users th,
+.table-wrap.table-wrap-fit-viewport .table-system-users td {
+  min-width: 0;
+}
+.table-wrap.table-wrap-fit-viewport .table-system-users th:nth-child(1),
+.table-wrap.table-wrap-fit-viewport .table-system-users td:nth-child(1) {
+  width: 3rem;
+}
+.table-wrap.table-wrap-fit-viewport .table-system-users th:nth-child(2),
+.table-wrap.table-wrap-fit-viewport .table-system-users td:nth-child(2),
+.table-wrap.table-wrap-fit-viewport .table-system-users th:nth-child(3),
+.table-wrap.table-wrap-fit-viewport .table-system-users td:nth-child(3) {
+  width: 11%;
+}
+.table-wrap.table-wrap-fit-viewport .table-system-users th:nth-child(4),
+.table-wrap.table-wrap-fit-viewport .table-system-users td:nth-child(4) {
+  width: 14%;
+}
+/* Remaining horizontal space goes to the hash (wraps); grows/shrinks with viewport */
+.table-wrap.table-wrap-fit-viewport .table-system-users th:nth-child(5),
+.table-wrap.table-wrap-fit-viewport .table-system-users td:nth-child(5) {
+  width: auto;
+}
+.table-wrap.table-wrap-fit-viewport .table-system-users td:nth-child(5).cell-hash,
+.table-wrap.table-wrap-fit-viewport .table-system-users th:nth-child(5) {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  hyphens: auto;
+  vertical-align: top;
+}
+.table-wrap.table-wrap-fit-viewport .table-system-users td:nth-child(5).cell-hash {
+  padding-top: 0.65rem;
+}
+.table-wrap.table-wrap-fit-viewport .table-system-users td:nth-child(5).cell-hash code {
+  display: block;
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+  line-height: 1.35;
+  max-width: 100%;
+}
+.table-wrap.table-wrap-fit-viewport .table-system-users th:nth-child(6),
+.table-wrap.table-wrap-fit-viewport .table-system-users td:nth-child(6) {
+  width: 7.75rem;
+  min-width: 7.75rem;
+  max-width: 7.75rem;
+  white-space: nowrap;
+}
+.table-wrap.table-wrap-fit-viewport .table-system-users td:nth-child(6).table-actions {
+  min-width: 7.75rem;
+  width: 7.75rem;
+  max-width: 7.75rem;
 }
 
 /* Cards / menu items */

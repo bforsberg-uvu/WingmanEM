@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% block title %}Log in — WingmanEM{% endblock %}
+
+{% block content %}
+  <h2 style="margin-bottom: 1rem;">Log in</h2>
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+      <div class="flash-messages" style="margin-bottom: 1rem;">
+        {% for cat, msg in messages %}
+          <div class="flash flash-{{ cat }}">{{ msg }}</div>
+        {% endfor %}
+      </div>
+    {% endif %}
+  {% endwith %}
+  <form method="post" action="{{ url_for('login') }}" class="auth-form">
+    {% if request.args.get('next') %}
+    <input type="hidden" name="next" value="{{ request.args.get('next') }}">
+    {% endif %}
+    <label for="user_id">User ID</label>
+    <input type="text" id="user_id" name="user_id" required autocomplete="username" autofocus>
+    <label for="password">Password</label>
+    <input type="password" id="password" name="password" required autocomplete="current-password">
+    <div class="form-actions">
+      <button type="submit" class="btn btn-primary">Log in</button>
+    </div>
+  </form>
+  <p style="margin-top: 1.25rem;"><a href="{{ url_for('register') }}">Create account</a></p>
+{% endblock %}

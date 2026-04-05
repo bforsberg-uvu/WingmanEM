@@ -14,13 +14,59 @@ from datetime import date
 # Ensure project root is on path so wingmanem and data files resolve
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from flask import Flask, redirect, render_template, request, url_for
+from flask import Flask, flash, redirect, render_template, request, url_for
+from flask_login import LoginManager, UserMixin, current_user, login_user, logout_user
 
 import wingmanem.app as app_module
+import wingmanem.auth_users as auth_users_module
 
 app = Flask(__name__, static_folder="static", template_folder="templates")
 app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", "dev-secret-change-in-production")
 app.config["MAX_CONTENT_LENGTH"] = 32 * 1024 * 1024  # 32 MB for uploads
+
+login_manager = LoginManager()
+login_manager.init_app(app)
+login_manager.login_view = "login"
+login_manager.login_message = None
+
+
+class AuthUser(UserMixin):
+    def __init__(self, pk: int, login_id: str, first_name: str, last_name: str):
+        self.id = pk
+        self.login_id = login_id
+        self.first_name = first_name
+        self.last_name = last_name
+
+
+@login_manager.user_loader
+def load_user(user_id: str):
+    if not user_id:
+        return None
+    try:
+        pk = int(user_id)
+    except ValueError:
+        return None
+    data = auth_users_module.get_user_by_id(pk)
+    if not data:
+        return None
+    return AuthUser(
+        data["id"],
+        data["login_id"],
+        data["first_name"],
+        data["last_name"],
+    )
+
+
+_AUTH_EXEMPT_ENDPOINTS = frozenset({"login", "register", "static"})
+
+
+def _safe_next_url(target: str | None) -> str | None:
+    if not target or not isinstance(target, str):
+        return None
+    t = target.strip()
+    if t.startswith("/") and not t.startswith("//"):
+        return t
+    return None
 
 
 def init_data():
@@ -34,10 +80,66 @@ def init_data():
 
 
 @app.before_request
-def ensure_data_loaded():
+def _before_each_request():
     if not getattr(app_module, "_web_data_loaded", False):
         init_data()
         app_module._web_data_loaded = True
+
+    if request.endpoint is None or request.endpoint in _AUTH_EXEMPT_ENDPOINTS:
+        return None
+    if not current_user.is_authenticated:
+        return redirect(url_for("login", next=request.full_path))
+
+
+# ----- Auth (exempt from global login check) -----
+
+
+@app.route("/login", methods=["GET", "POST"])
+def login():
+    if current_user.is_authenticated:
+        return redirect(url_for("index"))
+    if request.method == "POST":
+        uid = request.form.get("user_id", "").strip()
+        pw = request.form.get("password", "")
+        row = auth_users_module.verify_credentials(uid, pw)
+        if row:
+            login_user(
+                AuthUser(row["id"], row["login_id"], row["first_name"], row["last_name"]),
+                remember=False,
+            )
+            nxt = _safe_next_url(request.args.get("next") or request.form.get("next"))
+            return redirect(nxt or url_for("index"))
+        flash("Invalid user ID or password. Please try again.", "error")
+    return render_template("login.html")
+
+
+@app.route("/register", methods=["GET", "POST"])
+def register():
+    if current_user.is_authenticated:
+        return redirect(url_for("index"))
+    if request.method == "POST":
+        p1 = request.form.get("password", "")
+        p2 = request.form.get("password_confirm", "")
+        if p1 != p2:
+            flash("Passwords do not match.", "error")
+            return render_template("register.html")
+        ok, err = auth_users_module.create_user(
+            request.form.get("first_name", ""),
+            request.form.get("last_name", ""),
+            request.form.get("user_id", ""),
+            p1,
+        )
+        if ok:
+            flash("Account created. Please log in.", "success")
+            return redirect(url_for("login"))
+        flash(err, "error")
+    return render_template("register.html")
+
+
+@app.route("/logout", methods=["POST"])
+def logout():
+    logout_user()
+    return redirect(url_for("login"))
 
 
 # ----- Main menu (single route that takes user to main menu) -----
@@ -689,6 +791,40 @@ def developer_comp_statements():
 def developer_direct_reports():
     """DirectReportORM, _db_load_direct_reports, _db_replace_direct_reports_from_list."""
     return render_template("developer_direct_reports.html")
+
+
+@app.route("/developer/system-users")
+def developer_system_users():
+    """Registered app users and password hashes (developer only)."""
+    try:
+        rows = auth_users_module.list_users_with_password_hashes()
+    except Exception:
+        rows = []
+    return render_template("developer_system_users.html", users=rows)
+
+
+@app.route("/developer/system-users/delete/<int:user_id>", methods=["GET", "POST"])
+def developer_delete_application_user(user_id):
+    """Remove an application user (not yourself)."""
+    if user_id == current_user.id:
+        flash("You cannot delete your own account.", "error")
+        return redirect(url_for("developer_system_users"))
+    target = auth_users_module.get_user_by_id(user_id)
+    if not target:
+        flash("User not found.", "error")
+        return redirect(url_for("developer_system_users"))
+    if request.method == "GET":
+        return render_template(
+            "developer_delete_user_confirm.html",
+            user_row=target,
+            user_id=user_id,
+        )
+    ok, err = auth_users_module.delete_application_user(user_id)
+    if ok:
+        flash("User deleted.", "success")
+    else:
+        flash(err, "error")
+    return redirect(url_for("developer_system_users"))
 
 
 @app.route("/developer")

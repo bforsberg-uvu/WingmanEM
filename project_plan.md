@@ -195,5 +195,11 @@ A confirmation dialog should be displayed to make sure the user want to do the d
 
 ### Chunk #9:
 To implement this chunk add user authentication and secure the app with the following criteria
-Add user authentication
-Create a database users table which will store the application user's first and last name and user id 
+Add user authentication using Flask-Login + Werkzeug
+Create a database users table which will store the application user's first and last name and user id and a password table which will store the user's hashed password.  These two tables should have a 1 to 1 foriegn key relationship with a cascading delete. 
+Add a section to the developer menu that allows the developer to view the system users data with the hashed password in a table format.
+Add a login page as an entry point for the app with a Create Account link that allow a user to create an account with a password and then returns the user to the login page.
+The login page should require a user id and password in order to login and in the event of a successful login an authenticated flask session should be created and the user should be taken to the main page of the app.  Place a greeting to the user using the user's name in the upper right corner of the app main page.  In the event of a unsuccessful login the user should be alerted and allowed to try again. 
+A logout button should be added to the main page.  When the user clicks on this button the authenticated flask session should be cleared and the user should be taken to the login screen.
+All areas in the app should be secured so that the user must be authenticated to access any area in the app.
+
