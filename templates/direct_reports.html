@@ -42,11 +42,9 @@
         {% for r in reports %}
         <tr>
           {% for key, _header, _w in columns %}<td>{{ r.get(key) or '' }}</td>{% endfor %}
-          <td>
-            <form method="post" action="{{ url_for('direct_report_delete') }}" style="display: inline;">
-              <input type="hidden" name="id" value="{{ r.get('id') }}">
-              <button type="submit" class="btn btn-danger" style="padding: 0.25rem 0.5rem; font-size: 0.8rem;">Delete</button>
-            </form>
+          <td class="table-actions">
+            <a href="{{ url_for('direct_report_edit', item_id=r.get('id')) }}" class="btn btn-small">Edit</a>
+            <a href="{{ url_for('direct_report_delete', item_id=r.get('id')) }}" class="btn btn-danger btn-small">Delete</a>
           </td>
         </tr>
         {% endfor %}

@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% block title %}Edit Direct Report — WingmanEM{% endblock %}
+
+{% block breadcrumb %}
+  <div class="breadcrumb"><a href="{{ url_for('index') }}">Main</a> → <a href="{{ url_for('people_menu') }}">People</a> → <a href="{{ url_for('direct_reports_list') }}">Direct Reports</a> → Edit</div>
+{% endblock %}
+
+{% block content %}
+  <h2 style="margin-bottom: 1rem;">Edit Direct Report</h2>
+  <p class="text-muted" style="margin-bottom: 1rem;">Editing ID {{ report.get('id') }} — {{ report.get('first_name', '') }} {{ report.get('last_name', '') }}</p>
+  <form method="post" action="{{ url_for('direct_report_edit', item_id=report.get('id')) }}">
+    <label>First name (required)</label>
+    <input type="text" name="first_name" required value="{{ report.get('first_name', '') }}">
+    <label>Last name (required)</label>
+    <input type="text" name="last_name" required value="{{ report.get('last_name', '') }}">
+    <label>Street address 1</label>
+    <input type="text" name="street_address_1" value="{{ report.get('street_address_1') or '' }}">
+    <label>Street address 2</label>
+    <input type="text" name="street_address_2" value="{{ report.get('street_address_2') or '' }}">
+    <label>City</label>
+    <input type="text" name="city" value="{{ report.get('city') or '' }}">
+    <label>State</label>
+    <input type="text" name="state" value="{{ report.get('state') or '' }}">
+    <label>Zipcode</label>
+    <input type="text" name="zipcode" value="{{ report.get('zipcode') or '' }}">
+    <label>Country</label>
+    <input type="text" name="country" value="{{ report.get('country') or '' }}">
+    <label>Birthday (YYYY-MM-DD)</label>
+    <input type="date" name="birthday" value="{{ report.get('birthday') or '' }}">
+    <label>Hire date (YYYY-MM-DD)</label>
+    <input type="date" name="hire_date" value="{{ report.get('hire_date') or '' }}">
+    <label>Current role</label>
+    <input type="text" name="current_role" value="{{ report.get('current_role') or '' }}">
+    <label>Role start date (YYYY-MM-DD)</label>
+    <input type="date" name="role_start_date" value="{{ report.get('role_start_date') or '' }}">
+    <label>Partner name</label>
+    <input type="text" name="partner_name" value="{{ report.get('partner_name') or '' }}">
+    <div class="form-actions">
+      <button type="submit" class="btn btn-primary">Save changes</button>
+      <a href="{{ url_for('direct_reports_list') }}" class="btn">Cancel</a>
+    </div>
+  </form>
+{% endblock %}

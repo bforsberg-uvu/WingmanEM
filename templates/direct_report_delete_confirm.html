@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block title %}Delete Direct Report — WingmanEM{% endblock %}
+
+{% block breadcrumb %}
+  <div class="breadcrumb"><a href="{{ url_for('index') }}">Main</a> → <a href="{{ url_for('people_menu') }}">People</a> → <a href="{{ url_for('direct_reports_list') }}">Direct Reports</a> → Delete</div>
+{% endblock %}
+
+{% block content %}
+  <h2 style="margin-bottom: 1rem;">Delete direct report?</h2>
+  <p style="margin-bottom: 1rem; line-height: 1.6;">
+    You are about to permanently remove <strong>{{ report.get('first_name', '') }} {{ report.get('last_name', '') }}</strong>
+    (ID {{ item_id }}). Related goals, 1:1 summaries, and compensation statement rows for this person will also be removed.
+  </p>
+  <p class="text-muted" style="margin-bottom: 1.5rem;">If you do not want to delete this record, choose Cancel.</p>
+  <div class="form-actions">
+    <form method="post" action="{{ url_for('direct_report_delete', item_id=item_id) }}" style="display: inline;">
+      <button type="submit" class="btn btn-danger">Yes, delete</button>
+    </form>
+    <a href="{{ url_for('direct_reports_list') }}" class="btn">Cancel</a>
+  </div>
+{% endblock %}

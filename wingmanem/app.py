@@ -666,6 +666,28 @@ def _db_delete_all_direct_report_comp_data() -> None:
         session.close()
 
 
+def _db_delete_comp_data_for_direct_report(direct_report_id: int) -> None:
+    """Remove compensation statement rows for one direct report."""
+    if not _db_available:
+        return
+    from sqlalchemy import delete
+
+    from wingmanem.database import get_session
+    from wingmanem.orm_models import DirectReportCompDataORM
+
+    session = get_session()
+    try:
+        session.execute(
+            delete(DirectReportCompDataORM).where(DirectReportCompDataORM.direct_report_id == direct_report_id)
+        )
+        session.commit()
+    except Exception:
+        session.rollback()
+        raise
+    finally:
+        session.close()
+
+
 def _load_direct_report_goals() -> list[dict[str, Any]]:
     """Load goals: prefer SQLite; else JSON. Mirror to JSON after DB read. Creates empty pair if missing."""
     if _db_available:

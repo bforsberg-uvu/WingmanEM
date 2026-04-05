@@ -215,6 +215,26 @@ a:hover {
   font-size: 0.8rem;
 }
 
+/* Row action buttons: Edit left, Delete right — nowrap so fixed-layout tables
+   cannot squeeze the column and stack buttons vertically */
+.table-actions {
+  display: inline-flex;
+  flex-direction: row;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 0.5rem;
+  white-space: nowrap;
+}
+.table-wrap td.table-actions {
+  min-width: 12rem;
+  width: auto;
+  padding-right: 0.75rem;
+  box-sizing: border-box;
+}
+.table-actions .btn {
+  flex-shrink: 0;
+}
+
 /* Breadcrumb / back link */
 .breadcrumb {
   margin-bottom: 1rem;
@@ -228,17 +248,23 @@ a:hover {
 /* Tables — use full horizontal space; scroll only when content is wider than viewport */
 .table-wrap {
   overflow-x: auto;
+  overflow-y: visible;
   margin: 1rem 0;
   border-radius: 8px;
   border: 1px solid var(--border);
   -webkit-overflow-scrolling: touch;
+  /* Keeps the last column from looking clipped against the inner edge when scrolled flush right */
+  padding-inline: 2px;
+  box-sizing: border-box;
 }
 .table-wrap table {
   width: 100%;
   min-width: max-content;
   border-collapse: collapse;
   font-size: 0.9rem;
-  table-layout: fixed;
+  /* auto: respect cell min-widths so wide tables scroll instead of clipping
+     the last column (e.g. Edit/Delete on direct reports). */
+  table-layout: auto;
 }
 table {
   width: 100%;

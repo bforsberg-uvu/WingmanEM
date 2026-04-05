@@ -192,3 +192,8 @@ When the user goes to the edit route a form similar to the one that is used to a
 The user can edit this data and save the changes.
 Refactor the functionality to delete a direct report so that when the delete button is pressed the user is taken to a /delete/<item_id> route where item_id represents the direct report being deleted.
 A confirmation dialog should be displayed to make sure the user want to do the delete.  If the user confirms the direct report is deleted and the user is returned to the table view of direct report otherwise the user is just returned to the table view of direct reports.
+
+### Chunk #9:
+To implement this chunk add user authentication and secure the app with the following criteria
+Add user authentication
+Create a database users table which will store the application user's first and last name and user id 

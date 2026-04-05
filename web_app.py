@@ -106,22 +106,55 @@ def direct_report_add():
     return redirect(url_for("direct_reports_list"))
 
 
-@app.route("/people/direct-reports/delete", methods=["POST"])
-def direct_report_delete():
-    rid = request.form.get("id")
-    if rid:
-        try:
-            target_id = int(rid)
-            index = next(
-                (i for i, r in enumerate(app_module.direct_reports) if r.get("id") == target_id),
-                None,
-            )
-            if index is not None:
-                app_module._delete_goals_for_direct_report(target_id)
-                app_module.direct_reports.pop(index)
-                app_module._save_direct_reports()
-        except ValueError:
-            pass
+@app.route("/people/direct-reports/edit/<int:item_id>", methods=["GET", "POST"])
+def direct_report_edit(item_id):
+    """Edit an existing direct report (same fields as add)."""
+    report = next((r for r in app_module.direct_reports if r.get("id") == item_id), None)
+    if report is None:
+        return redirect(url_for("direct_reports_list"))
+    if request.method == "GET":
+        return render_template("direct_report_edit.html", report=report)
+    updated = {
+        "id": item_id,
+        "first_name": request.form.get("first_name", "").strip() or "Unknown",
+        "last_name": request.form.get("last_name", "").strip() or "Unknown",
+        "street_address_1": request.form.get("street_address_1", "").strip() or None,
+        "street_address_2": request.form.get("street_address_2", "").strip() or None,
+        "city": request.form.get("city", "").strip() or None,
+        "state": request.form.get("state", "").strip() or None,
+        "zipcode": request.form.get("zipcode", "").strip() or None,
+        "country": request.form.get("country", "").strip() or None,
+        "birthday": request.form.get("birthday", "").strip() or None,
+        "hire_date": request.form.get("hire_date", "").strip() or None,
+        "current_role": request.form.get("current_role", "").strip() or None,
+        "role_start_date": request.form.get("role_start_date", "").strip() or None,
+        "partner_name": request.form.get("partner_name", "").strip() or None,
+    }
+    updated = app_module._normalize_direct_report(updated)
+    idx = next(i for i, r in enumerate(app_module.direct_reports) if r.get("id") == item_id)
+    app_module.direct_reports[idx] = updated
+    app_module._save_direct_reports()
+    return redirect(url_for("direct_reports_list"))
+
+
+@app.route("/people/direct-reports/delete/<int:item_id>", methods=["GET", "POST"])
+def direct_report_delete(item_id):
+    """Confirm (GET) or perform (POST) deletion of a direct report."""
+    report = next((r for r in app_module.direct_reports if r.get("id") == item_id), None)
+    if report is None:
+        return redirect(url_for("direct_reports_list"))
+    if request.method == "GET":
+        return render_template("direct_report_delete_confirm.html", report=report, item_id=item_id)
+    index = next(
+        (i for i, r in enumerate(app_module.direct_reports) if r.get("id") == item_id),
+        None,
+    )
+    if index is not None:
+        app_module._delete_goals_for_direct_report(item_id)
+        app_module._db_purge_one_to_one_for_report(item_id)
+        app_module._db_delete_comp_data_for_direct_report(item_id)
+        app_module.direct_reports.pop(index)
+        app_module._save_direct_reports()
     return redirect(url_for("direct_reports_list"))
 
 
