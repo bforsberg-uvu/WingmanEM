@@ -336,24 +336,19 @@ a:hover {
   font-size: 0.8rem;
 }
 
-/* Row action buttons: Edit left, Delete right — nowrap so fixed-layout tables
-   cannot squeeze the column and stack buttons vertically */
-.table-actions {
-  display: inline-flex;
-  flex-direction: row;
-  flex-wrap: nowrap;
-  align-items: center;
-  gap: 0.5rem;
-  white-space: nowrap;
-}
+/* Row action cells: must stay display:table-cell or row borders / row lines break.
+   Use inline-block buttons + margin instead of flex on the <td>. */
 .table-wrap td.table-actions {
+  display: table-cell;
+  vertical-align: middle;
+  white-space: nowrap;
   min-width: 12rem;
   width: auto;
   padding-right: 0.75rem;
   box-sizing: border-box;
 }
-.table-actions .btn {
-  flex-shrink: 0;
+.table-wrap td.table-actions .btn + .btn {
+  margin-left: 0.5rem;
 }
 
 /* Breadcrumb / back link */

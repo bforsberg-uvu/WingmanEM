@@ -5,7 +5,7 @@ Menu-driven app: direct reports, management tips (Mistral AI), milestone reminde
 1:1 recording upload/summary (Mistral), SQLite + JSON persistence.
 
 Sections (in order):
-  1. Configuration & constants (paths, globals, ANSI)
+  1. Configuration (in-memory globals; paths in wingmanem.constants)
   2. Database (SQLAlchemy + SQLite init; JSON mirror writes; load prefers DB, JSON migrates empty tables)
   3. Utilities (config, I/O, menu box & submenu)
   4. Direct reports (model, load/save, list/add/delete/generate/purge)
@@ -32,40 +32,30 @@ try:
 except ImportError:
     MISTRAL_AVAILABLE = False
 
-
-# ============================================================================
-# CONFIGURATION & CONSTANTS — paths, globals, ANSI colors
-# ============================================================================
-
-# Direct_Reports table structure (project_plan.md): required id, first_name, last_name; rest optional
-DIRECT_REPORT_OPTIONAL_KEYS = (
-    "street_address_1", "street_address_2", "city", "state", "zipcode", "country",
-    "birthday", "hire_date", "current_role", "role_start_date", "partner_name",
-    "owner_user_id",
+from wingmanem.constants import (
+    DATABASE_PATH,
+    DIRECT_REPORT_COMP_DATA_FILE,
+    DIRECT_REPORT_GOALS_FILE,
+    DIRECT_REPORT_OPTIONAL_KEYS,
+    DIRECT_REPORTS_FILE,
+    EMPLOYEE_COMP_DATA_FILE,
+    LEGACY_DIRECT_REPORT_COMP_DATA_FILE,
+    MANAGEMENT_TIPS_FILE,
+    MENU_BOLD,
+    MENU_COLOR_BLACK,
+    MENU_COLOR_DISABLED,
+    MENU_COLOR_RED,
+    MENU_COLOR_RESET,
 )
 
-# Global data
+# ============================================================================
+# CONFIGURATION & CONSTANTS — in-memory globals (paths live in wingmanem.constants)
+# ============================================================================
+
+# Global data (CLI and JSON mirrors)
 direct_reports: list[dict[str, Any]] = []
 # Each item: {"date": "YYYY-MM-DD", "text": "tip content"}
 management_tips: list[dict[str, str]] = []
-
-# Persistence files
-DIRECT_REPORTS_FILE = "direct_reports.json"
-MANAGEMENT_TIPS_FILE = "management_tips.json"
-DIRECT_REPORT_GOALS_FILE = "direct_report_goals.json"
-DIRECT_REPORT_COMP_DATA_FILE = "direct_report_comp_data.json"
-# Legacy filename (migrated on startup)
-LEGACY_DIRECT_REPORT_COMP_DATA_FILE = "employee_comp_data.json"
-# Backward-compatible alias
-EMPLOYEE_COMP_DATA_FILE = DIRECT_REPORT_COMP_DATA_FILE
-DATABASE_PATH = "wingmanem.db"
-
-# ANSI colors for menu items
-_MENU_COLOR_BLACK = "\033[30m"
-_MENU_COLOR_RED = "\033[31m"
-_MENU_COLOR_DISABLED = "\033[2;37m"  # very light gray (dim white)
-_MENU_COLOR_RESET = "\033[0m"
-_MENU_BOLD = "\033[1m"
 
 
 # ============================================================================
@@ -1589,7 +1579,7 @@ def _menu_box(
     sep = "╠" + "═" * width + "╣"
     bottom = "╚" + "═" * width + "╝"
     title_content = title[:width].ljust(width)
-    lines = ["║" + _MENU_BOLD + title_content + _MENU_COLOR_RESET + "║"]
+    lines = ["║" + MENU_BOLD + title_content + MENU_COLOR_RESET + "║"]
     for opt in options:
         if isinstance(opt, tuple):
             text = opt[0]
@@ -1599,12 +1589,12 @@ def _menu_box(
             text, enabled, red = opt, True, False
         content = text[:width].ljust(width)
         if not enabled:
-            color = _MENU_COLOR_DISABLED
+            color = MENU_COLOR_DISABLED
         elif red:
-            color = _MENU_COLOR_RED
+            color = MENU_COLOR_RED
         else:
-            color = _MENU_COLOR_BLACK
-        lines.append("║" + color + content + _MENU_COLOR_RESET + "║")
+            color = MENU_COLOR_BLACK
+        lines.append("║" + color + content + MENU_COLOR_RESET + "║")
     middle_lines: list[str] = []
     if middle:
         for m in middle:
@@ -1619,7 +1609,7 @@ def _menu_box(
                         bold_text = wrapped_line[:bold_len]
                         rest_text = wrapped_line[bold_len:width - 4]
                         # Build content: padding + bold + text + reset + rest + padding
-                        content = "  " + _MENU_BOLD + bold_text + _MENU_COLOR_RESET + rest_text
+                        content = "  " + MENU_BOLD + bold_text + MENU_COLOR_RESET + rest_text
                         # Pad to width, accounting for invisible ANSI codes
                         visible_len = len("  ") + len(bold_text) + len(rest_text)
                         padding_needed = width - 2 - visible_len
@@ -1632,7 +1622,7 @@ def _menu_box(
             else:
                 for wrapped_line in _wrap_text(m, width):
                     content = wrapped_line[:width].ljust(width)
-                    middle_lines.append("║" + _MENU_BOLD + content + _MENU_COLOR_RESET + "║")
+                    middle_lines.append("║" + MENU_BOLD + content + MENU_COLOR_RESET + "║")
     if middle_lines and middle_position == "bottom":
         return "\n".join([border, lines[0], sep] + lines[1:] + [sep] + middle_lines + [bottom])
     return "\n".join([border, lines[0], sep] + middle_lines + lines[1:] + [bottom])

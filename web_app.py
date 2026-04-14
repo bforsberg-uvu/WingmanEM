@@ -1,11 +1,20 @@
 """
-WingmanEM Flask Web App — root of the web application.
+WingmanEM Flask Web App — application factory wiring and HTTP routes.
 
-Run the Flask server and start the app when this script is executed:
-  python web_app.py
+Run: python web_app.py
 
-Single functional route "/" takes the user to the main menu.
-All existing menus and functionality are available via routes.
+Layout (search for section headers):
+  • Flask app, LoginManager, auth user model
+  • Data init + before_request (per-user g.direct_reports)
+  • Auth: login, register, logout
+  • Main + project + people menus
+  • Direct reports CRUD / generate / comp ratings
+  • Management tips, milestones, 1:1 flows
+  • Direct report goals (forms + REST-style update/delete)
+  • Compensation statements (/items)
+  • Developer menu (schema, docs, system users)
+
+HTTP debug helpers: wingmanem.http_debug
 """
 import os
 import sys
@@ -19,6 +28,8 @@ from flask_login import LoginManager, UserMixin, current_user, login_user, logou
 
 import wingmanem.app as app_module
 import wingmanem.auth_users as auth_users_module
+from wingmanem.constants import COMP_RATING_LABELS
+from wingmanem.http_debug import raw_http_request_for_display
 
 app = Flask(__name__, static_folder="static", template_folder="templates")
 app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", "dev-secret-change-in-production")
@@ -57,6 +68,7 @@ def load_user(user_id: str):
     )
 
 
+# Endpoints reachable without Flask-Login session
 _AUTH_EXEMPT_ENDPOINTS = frozenset({"login", "register", "static"})
 
 
@@ -98,7 +110,9 @@ def _before_each_request():
     g.direct_reports = app_module._db_load_direct_reports_for_user(current_user.id)
 
 
-# ----- Auth (exempt from global login check) -----
+# =============================================================================
+# Auth (exempt from global login check)
+# =============================================================================
 
 
 @app.route("/login", methods=["GET", "POST"])
@@ -151,7 +165,9 @@ def logout():
     return redirect(url_for("login"))
 
 
-# ----- Main menu (single route that takes user to main menu) -----
+# =============================================================================
+# Main menu
+# =============================================================================
 
 @app.route("/")
 def index():
@@ -161,21 +177,27 @@ def index():
     return render_template("main.html", tip=tip)
 
 
-# ----- Project menu -----
+# =============================================================================
+# Project menu
+# =============================================================================
 
 @app.route("/project")
 def project_menu():
     return render_template("project.html")
 
 
-# ----- People menu -----
+# =============================================================================
+# People menu
+# =============================================================================
 
 @app.route("/people")
 def people_menu():
     return render_template("people.html")
 
 
-# ----- Direct Reports -----
+# =============================================================================
+# Direct reports
+# =============================================================================
 
 @app.route("/people/direct-reports")
 def direct_reports_list():
@@ -303,7 +325,9 @@ def direct_reports_generate_ratings():
     return redirect(url_for("direct_reports_list"))
 
 
-# ----- Management tips -----
+# =============================================================================
+# Management tips
+# =============================================================================
 
 @app.route("/people/tips")
 def tips_list():
@@ -314,7 +338,9 @@ def tips_list():
     return render_template("tips.html", tips=tips)
 
 
-# ----- Milestone reminders -----
+# =============================================================================
+# Milestone reminders
+# =============================================================================
 
 @app.route("/people/milestones")
 def milestones():
@@ -331,7 +357,9 @@ def milestones():
     )
 
 
-# ----- 1:1 summaries -----
+# =============================================================================
+# 1:1 summaries
+# =============================================================================
 
 @app.route("/people/1to1")
 def one_to_one_menu():
@@ -406,7 +434,9 @@ def one_to_one_purge():
     return render_template("one_to_one_purge.html", report_id=report_id, report=report)
 
 
-# ----- Upload 1:1 (simplified: form + handle file) -----
+# =============================================================================
+# 1:1 upload (multipart form + Mistral summary)
+# =============================================================================
 
 @app.route("/people/1to1/upload", methods=["GET", "POST"])
 def one_to_one_upload():
@@ -475,7 +505,9 @@ Format the response clearly with headings (Summary, Action Items, Follow-ups). U
     return redirect(url_for("one_to_one_upload"))
 
 
-# ----- Direct Report Goals (Chunk #5) -----
+# =============================================================================
+# Direct report goals
+# =============================================================================
 
 def _reports_with_goals():
     """Return list of direct reports that have at least one goal, with goal_count."""
@@ -493,34 +525,6 @@ def _reports_with_goals():
             r_copy["goal_count"] = by_report[rid]
             reports.append(r_copy)
     return reports
-
-
-def _headers_for_display(headers) -> dict[str, str]:
-    """Return headers safe for display (redacts sensitive values)."""
-    redacted: dict[str, str] = {}
-    for k, v in headers.items():
-        if k.lower() in {"cookie", "authorization"}:
-            redacted[k] = "[redacted]"
-        else:
-            redacted[k] = v
-    return redacted
-
-
-def _raw_http_request_for_display(req, body_text: str = "") -> str:
-    """Best-effort reconstructed raw HTTP request string.
-
-    This is not a true wire capture; it is reconstructed from Flask/Werkzeug's parsed request.
-    """
-    proto = req.environ.get("SERVER_PROTOCOL", "HTTP/1.1")
-    full_path = req.full_path
-    if full_path.endswith("?"):
-        full_path = full_path[:-1]
-    request_line = f"{req.method} {full_path} {proto}"
-    hdrs = _headers_for_display(req.headers)
-    header_lines = "\n".join([f"{k}: {v}" for k, v in hdrs.items()])
-    if body_text:
-        return f"{request_line}\n{header_lines}\n\n{body_text}"
-    return f"{request_line}\n{header_lines}"
 
 
 @app.route("/people/goals")
@@ -545,6 +549,11 @@ def goal_generate():
     return render_template("goal_generate.html")
 
 
+# =============================================================================
+# Compensation statements (Chunk #6)
+# =============================================================================
+
+
 @app.route("/items")
 def comp_items():
     """Load direct report compensation rows from the database and render compensation statements."""
@@ -559,14 +568,6 @@ def comp_items():
             items = app_module._db_load_direct_report_comp_data_for_user(uid)
         except Exception:
             items = []
-    # Build a simple lookup for rating labels
-    rating_labels = {
-        5: "Exceptional Contribution",
-        4: "Exceed Expectations",
-        3: "Meets Expectations",
-        2: "Missed Expectations",
-        1: "Needs improvement",
-    }
     selected_report_id = request.args.get("report_id", type=int)
     selected_item = None
     if selected_report_id and not app_module.user_owns_direct_report(uid, selected_report_id):
@@ -582,7 +583,7 @@ def comp_items():
     return render_template(
         "comp_items.html",
         items=items,
-        rating_labels=rating_labels,
+        rating_labels=COMP_RATING_LABELS,
         selected_item=selected_item,
         selected_report_id=selected_report_id,
     )
@@ -620,7 +621,7 @@ def goal_add_post():
     # Store for success page
     from flask import session
     post_request = str(dict(request.form))
-    post_raw_http = _raw_http_request_for_display(request, raw_body or "")
+    post_raw_http = raw_http_request_for_display(request, raw_body or "")
     session["last_added_goal"] = {
         "post_request": post_request,
         "post_raw_http": post_raw_http,
@@ -683,7 +684,7 @@ def goal_view_report():
     report = next((r for r in g.direct_reports if r.get("id") == report_id), None)
     report_name = f"{report.get('first_name', '')} { report.get('last_name', '')} (ID {report_id})" if report else f"Report ID {report_id}"
     get_request = str(dict(request.args))
-    get_raw_http = _raw_http_request_for_display(request, "")
+    get_raw_http = raw_http_request_for_display(request, "")
     return render_template(
         "goal_view_report.html",
         report_id=report_id,
@@ -731,7 +732,7 @@ def goal_update(goal_id):
     raw_body = request.get_data(cache=True, as_text=True)
     session["last_goal_request"] = {
         "request_type": "update",
-        "raw_http": _raw_http_request_for_display(request, raw_body or ""),
+        "raw_http": raw_http_request_for_display(request, raw_body or ""),
         "report_id": report_id,
     }
     return redirect(url_for("goal_request_result"))
@@ -750,7 +751,7 @@ def goal_delete(goal_id):
     app_module._delete_goal_by_id(goal_id)
     session["last_goal_request"] = {
         "request_type": "delete",
-        "raw_http": _raw_http_request_for_display(request, ""),
+        "raw_http": raw_http_request_for_display(request, ""),
         "report_id": report_id,
     }
     return redirect(url_for("goal_request_result"))
@@ -799,7 +800,9 @@ def goal_remove():
     return render_template("goal_remove.html", reports_with_goals=reports_with_goals)
 
 
-# ----- Developer menu (optional) -----
+# =============================================================================
+# Developer menu
+# =============================================================================
 # Register subpaths before /developer so routing stays unambiguous.
 
 

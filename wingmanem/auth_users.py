@@ -4,11 +4,20 @@ from __future__ import annotations
 
 from typing import Any
 
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
+from sqlalchemy.orm import Session
 from werkzeug.security import check_password_hash, generate_password_hash
 
 from wingmanem.database import get_session
-from wingmanem.orm_models import AppUserORM, UserPasswordORM
+from wingmanem.orm_models import (
+    AppUserORM,
+    DirectReportCompDataORM,
+    DirectReportGoalORM,
+    DirectReportORM,
+    ManagementTipORM,
+    OneToOneSummaryORM,
+    UserPasswordORM,
+)
 
 
 def _open_session():
@@ -134,8 +143,26 @@ def list_users_with_password_hashes() -> list[dict[str, Any]]:
         session.close()
 
 
+def _delete_owned_people_data_for_user(session: Session, user_pk: int) -> None:
+    """Remove rows that FK-reference this user so DELETE FROM users can succeed.
+
+    `direct_reports.owner_user_id` and `management_tips.owner_user_id` reference
+    users.id without ON DELETE CASCADE in SQLite; child report data must go first.
+    """
+    rids = session.scalars(
+        select(DirectReportORM.id).where(DirectReportORM.owner_user_id == user_pk)
+    ).all()
+    rid_list = [int(x) for x in rids]
+    if rid_list:
+        session.execute(delete(OneToOneSummaryORM).where(OneToOneSummaryORM.direct_report_id.in_(rid_list)))
+        session.execute(delete(DirectReportGoalORM).where(DirectReportGoalORM.direct_report_id.in_(rid_list)))
+        session.execute(delete(DirectReportCompDataORM).where(DirectReportCompDataORM.direct_report_id.in_(rid_list)))
+        session.execute(delete(DirectReportORM).where(DirectReportORM.owner_user_id == user_pk))
+    session.execute(delete(ManagementTipORM).where(ManagementTipORM.owner_user_id == user_pk))
+
+
 def delete_application_user(user_pk: int) -> tuple[bool, str]:
-    """Delete a row from users (user_passwords CASCADE). Returns (ok, error_message)."""
+    """Delete a user row; password row CASCADEs. Purges owned direct reports and tips first."""
     session = _open_session()
     if session is None:
         return False, "Database is not available."
@@ -143,6 +170,7 @@ def delete_application_user(user_pk: int) -> tuple[bool, str]:
         user = session.get(AppUserORM, user_pk)
         if not user:
             return False, "User not found."
+        _delete_owned_people_data_for_user(session, user_pk)
         session.delete(user)
         session.commit()
         return True, ""

@@ -7,7 +7,7 @@
 
 {% block content %}
   <h2 style="margin-bottom: 0.5rem;">Application users</h2>
-  <p class="text-muted" style="margin-bottom: 1rem;">Rows from <code>users</code> joined with <code>user_passwords</code> (Werkzeug password hash). For debugging only. You cannot delete your own account.</p>
+  <p class="text-muted" style="margin-bottom: 1rem;">Rows from <code>users</code> joined with <code>user_passwords</code> (Werkzeug password hash). For debugging only. You cannot delete your own account. Deleting a user also removes their owned direct reports (and related goals, 1:1 summaries, comp rows) and management tips.</p>
 
   {% with messages = get_flashed_messages(with_categories=true) %}
     {% if messages %}
