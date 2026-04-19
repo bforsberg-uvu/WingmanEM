@@ -60,6 +60,13 @@ SQL_USER_PASSWORDS = """CREATE TABLE IF NOT EXISTS user_passwords (
     password_hash TEXT NOT NULL
 );"""
 
+SQL_API_TOKENS = """CREATE TABLE IF NOT EXISTS api_tokens (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    token_hash TEXT NOT NULL,
+    created_at TEXT NOT NULL
+);"""
+
 SQL_DIRECT_REPORT_COMP = """CREATE TABLE IF NOT EXISTS direct_report_comp_data (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     direct_report_id INTEGER NOT NULL,
@@ -79,6 +86,7 @@ def build_schema_model_pairs() -> list[dict[str, str]]:
     specs = [
         ("users", SQL_USERS, orm_models.AppUserORM),
         ("user_passwords", SQL_USER_PASSWORDS, orm_models.UserPasswordORM),
+        ("api_tokens", SQL_API_TOKENS, orm_models.ApiTokenORM),
         ("direct_reports", SQL_DIRECT_REPORTS, orm_models.DirectReportORM),
         ("management_tips", SQL_MANAGEMENT_TIPS, orm_models.ManagementTipORM),
         ("one_to_one_summaries", SQL_ONE_TO_ONE, orm_models.OneToOneSummaryORM),

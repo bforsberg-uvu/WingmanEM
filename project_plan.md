@@ -261,3 +261,38 @@ The login page should require a user id and password in order to login and in th
 A logout button should be added to the main page.  When the user clicks on this button the authenticated flask session should be cleared and the user should be taken to the login screen.
 All areas in the app should be secured so that the user must be authenticated to access any area in the app.
 
+### Chunk #10:
+To implement this chunk create do api token section and apis with the following criteria:
+Create a user separate user profile section that can be accessed by clicking on the name in the greeting in upper right corner of the app. 
+In this user profile section list attributes of the user with password obsfucated with a button that allow the user to see their password in plain text. 
+Create an api token generation section in the user profile section that allow generation of a secret api token to be used to authenticate the user when utilizing the apis which will be specified next. This section should list all token and allow users to copy the token to the clipboard so it can be pasted elsewhere and also allow users to delete token when they no longer need them. These tokens should be stored in a secured hashed format in the database so that the system can authenticate the user when accessing the apis.  This token should only allow access to data related to this user.
+For the api endpoints:
+All endpoints should have a base route of /api/v1
+All endpoints should be secured requiring an authentication token to be passed in that is generated as described above.
+All endpoints should return either a json list of objects in the case of multiple objects or a single json object in case of a single object.
+If the token is not valid the api should return a http 401 error
+
+First api endpoint:
+Endpoint route should be /direct_reports
+This endpoint should return a json list of the user's direct reports with all their attributes
+If the user has no direct reports the api should return an empty list
+
+Second api endpoint:
+Endpoint route should be /direct_reports/{id} where {id} is the id of the direct report
+This endpoint should return a single json object representing the direct report with all its attributes
+If the id is not found, the api should return a 404
+
+Third api enpoint:
+Endpoint route should be /comp_statements
+This endpoint should return a json list of the user's direct report's comp statements with all their attributes
+If there are no comp statements the api should return an empty list
+
+Fourth api endpoint:
+Endpoint route should be /direct_reports_goals
+This endpoint should return a json list of the user's direct reports and all their goals with with all their attributes
+If the user has no direct reports or there are no goals the api should return an empty list
+
+Fifth api endpoint:
+Endpoint route should be /direct_reports_goals/{id} where {id} is the id of the direct report
+This endpoint should return a single json object representing the direct report's goals with all its attributes
+If the id is not found, the api should return a 404

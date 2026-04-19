@@ -1,0 +1,81 @@
+{% extends "base.html" %}
+{% block title %}Profile — WingmanEM{% endblock %}
+
+{% block breadcrumb %}
+  <div class="breadcrumb"><a href="{{ url_for('index') }}">Main</a> → Profile</div>
+{% endblock %}
+
+{% block content %}
+  <h2 style="margin-bottom: 0.5rem;">User profile</h2>
+  <p class="text-muted" style="margin-bottom: 1rem;">Account details and API tokens for `/api/v1/*`.</p>
+
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+      <div class="flash-messages" style="margin-bottom: 1rem;">
+        {% for cat, msg in messages %}
+          <div class="flash flash-{{ cat }}">{{ msg }}</div>
+        {% endfor %}
+      </div>
+    {% endif %}
+  {% endwith %}
+
+  {% if new_token %}
+    <div class="flash flash-success" style="margin-bottom: 1rem;">
+      <div style="font-weight: 600; margin-bottom: 0.5rem;">New API token (copy now — it will not be shown again)</div>
+      <code style="display:block; padding:0.75rem; border:1px solid var(--border); border-radius:8px; background:var(--bg-card); word-break:break-all;">{{ new_token }}</code>
+    </div>
+  {% endif %}
+
+  <div class="card" style="margin-bottom: 1rem;">
+    <h3 style="margin-top: 0;">Account</h3>
+    <table style="width: 100%; border-collapse: collapse;">
+      <tr><td style="padding: 0.35rem 0; width: 12rem;"><strong>User ID</strong></td><td style="padding: 0.35rem 0;"><code>{{ current_user.login_id }}</code></td></tr>
+      <tr><td style="padding: 0.35rem 0;"><strong>First name</strong></td><td style="padding: 0.35rem 0;">{{ current_user.first_name }}</td></tr>
+      <tr><td style="padding: 0.35rem 0;"><strong>Last name</strong></td><td style="padding: 0.35rem 0;">{{ current_user.last_name }}</td></tr>
+      <tr><td style="padding: 0.35rem 0;"><strong>Password</strong></td><td style="padding: 0.35rem 0;">******** <span class="text-muted" style="font-size:0.85rem;">(stored hashed; cannot be displayed)</span></td></tr>
+    </table>
+  </div>
+
+  <div class="card">
+    <h3 style="margin-top: 0;">API tokens</h3>
+    <p class="text-muted" style="margin-top: 0.25rem;">Use these to authenticate calls to the API. Header: <code>Authorization: Bearer &lt;token&gt;</code>.</p>
+
+    <form method="post" action="{{ url_for('api_token_create') }}" style="margin: 0.75rem 0 1rem;">
+      <button class="btn btn-primary" type="submit">Generate new token</button>
+    </form>
+
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>ID</th>
+            <th>Created (UTC)</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% if tokens %}
+            {% for t in tokens %}
+              <tr>
+                <td>{{ t.id }}</td>
+                <td><code>{{ t.created_at }}</code></td>
+                <td class="table-actions">
+                  <form method="post" action="{{ url_for('api_token_delete', token_id=t.id) }}" style="display:inline;">
+                    <button class="btn btn-danger btn-small" type="submit">Delete</button>
+                  </form>
+                </td>
+              </tr>
+            {% endfor %}
+          {% else %}
+            <tr class="table-empty-row">
+              <td colspan="3">No API tokens yet.</td>
+            </tr>
+          {% endif %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <p style="margin-top: 1rem;"><a href="{{ url_for('index') }}" class="btn">← Back to main menu</a></p>
+{% endblock %}
+

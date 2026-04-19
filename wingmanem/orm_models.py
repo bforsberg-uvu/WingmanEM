@@ -40,6 +40,22 @@ class UserPasswordORM(Base):
     password_hash: Mapped[str] = mapped_column(Text, nullable=False)
 
 
+class ApiTokenORM(Base):
+    """Hashed API tokens for /api/v1 endpoints."""
+
+    __tablename__ = "api_tokens"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    token_hash: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[str] = mapped_column(Text, nullable=False)
+
+
 class DirectReportORM(Base):
     __tablename__ = "direct_reports"
 

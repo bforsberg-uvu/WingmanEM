@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import secrets
+from datetime import datetime, timezone
 from typing import Any
 
 from sqlalchemy import delete, func, select
@@ -11,6 +13,7 @@ from werkzeug.security import check_password_hash, generate_password_hash
 from wingmanem.database import get_session
 from wingmanem.orm_models import (
     AppUserORM,
+    ApiTokenORM,
     DirectReportCompDataORM,
     DirectReportGoalORM,
     DirectReportORM,
@@ -139,6 +142,88 @@ def list_users_with_password_hashes() -> list[dict[str, Any]]:
                 }
             )
         return out
+    finally:
+        session.close()
+
+
+def create_api_token_for_user(user_pk: int) -> tuple[bool, str, str | None]:
+    """Create and persist a new API token for a user.
+
+    Returns (ok, error_message, plaintext_token_or_None). The plaintext token is only
+    available at creation time; the database stores only a hash.
+    """
+    session = _open_session()
+    if session is None:
+        return False, "Database is not available.", None
+    try:
+        user = session.get(AppUserORM, user_pk)
+        if not user:
+            return False, "User not found.", None
+        token = secrets.token_urlsafe(32)
+        token_hash = generate_password_hash(token)
+        created_at = datetime.now(timezone.utc).isoformat()
+        session.add(ApiTokenORM(user_id=user_pk, token_hash=token_hash, created_at=created_at))
+        session.commit()
+        return True, "", token
+    except Exception as e:
+        session.rollback()
+        return False, str(e) or "Could not create API token.", None
+    finally:
+        session.close()
+
+
+def list_api_tokens_for_user(user_pk: int) -> list[dict[str, Any]]:
+    """List token rows for the user (hash is not returned)."""
+    session = _open_session()
+    if session is None:
+        return []
+    try:
+        rows = session.scalars(
+            select(ApiTokenORM).where(ApiTokenORM.user_id == user_pk).order_by(ApiTokenORM.id.desc())
+        ).all()
+        return [{"id": r.id, "created_at": r.created_at} for r in rows]
+    finally:
+        session.close()
+
+
+def delete_api_token_for_user(user_pk: int, token_id: int) -> tuple[bool, str]:
+    session = _open_session()
+    if session is None:
+        return False, "Database is not available."
+    try:
+        row = session.scalars(
+            select(ApiTokenORM).where(ApiTokenORM.user_id == user_pk, ApiTokenORM.id == token_id).limit(1)
+        ).first()
+        if not row:
+            return False, "Token not found."
+        session.delete(row)
+        session.commit()
+        return True, ""
+    except Exception as e:
+        session.rollback()
+        return False, str(e) or "Could not delete token."
+    finally:
+        session.close()
+
+
+def verify_api_token(token: str) -> int | None:
+    """Return user_id for a valid token; else None."""
+    t = (token or "").strip()
+    if not t:
+        return None
+    session = _open_session()
+    if session is None:
+        return None
+    try:
+        # Small app: linear scan is acceptable; avoids storing token prefixes in DB.
+        rows = session.scalars(select(ApiTokenORM)).all()
+        for r in rows:
+            try:
+                if check_password_hash(r.token_hash, t):
+                    return int(r.user_id)
+            except Exception:
+                continue
+        return None
     finally:
         session.close()
 

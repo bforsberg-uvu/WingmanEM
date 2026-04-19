@@ -23,7 +23,7 @@ from datetime import date
 # Ensure project root is on path so wingmanem and data files resolve
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from flask import Flask, flash, g, redirect, render_template, request, url_for
+from flask import Flask, flash, g, jsonify, redirect, render_template, request, session, url_for
 from flask_login import LoginManager, UserMixin, current_user, login_user, logout_user
 
 import wingmanem.app as app_module
@@ -102,7 +102,7 @@ def _before_each_request():
         init_data()
         app_module._web_data_loaded = True
 
-    if request.endpoint is None or request.endpoint in _AUTH_EXEMPT_ENDPOINTS:
+    if request.endpoint is None or request.endpoint in _AUTH_EXEMPT_ENDPOINTS or request.path.startswith("/api/"):
         return None
     if not current_user.is_authenticated:
         return redirect(url_for("login", next=request.full_path))
@@ -176,6 +176,33 @@ def index():
     tip = app_module._get_latest_management_tip_for_user(current_user.id)
     return render_template("main.html", tip=tip)
 
+@app.route("/profile")
+def user_profile():
+    tokens = auth_users_module.list_api_tokens_for_user(current_user.id)
+    new_token = session.pop("new_api_token", None)
+    return render_template("profile.html", tokens=tokens, new_token=new_token)
+
+
+@app.route("/profile/tokens/create", methods=["POST"])
+def api_token_create():
+    ok, err, token = auth_users_module.create_api_token_for_user(current_user.id)
+    if ok and token:
+        session["new_api_token"] = token
+        flash("API token created.", "success")
+    else:
+        flash(err or "Could not create token.", "error")
+    return redirect(url_for("user_profile"))
+
+
+@app.route("/profile/tokens/<int:token_id>/delete", methods=["POST"])
+def api_token_delete(token_id: int):
+    ok, err = auth_users_module.delete_api_token_for_user(current_user.id, token_id)
+    if ok:
+        flash("Token deleted.", "success")
+    else:
+        flash(err or "Could not delete token.", "error")
+    return redirect(url_for("user_profile"))
+
 
 # =============================================================================
 # Project menu
@@ -193,6 +220,124 @@ def project_menu():
 @app.route("/people")
 def people_menu():
     return render_template("people.html")
+
+# =============================================================================
+# API v1 (token authenticated)
+# =============================================================================
+
+
+def _extract_bearer_token(req) -> str | None:
+    authz = (req.headers.get("Authorization") or "").strip()
+    if authz.lower().startswith("bearer "):
+        return authz[7:].strip() or None
+    # Fallback header
+    t = (req.headers.get("X-API-Token") or "").strip()
+    return t or None
+
+
+def _api_auth_user_id(req) -> int | None:
+    token = _extract_bearer_token(req)
+    return auth_users_module.verify_api_token(token or "")
+
+
+def _api_unauthorized():
+    return jsonify({"error": "unauthorized"}), 401
+
+
+@app.get("/api/v1/direct_reports")
+def api_direct_reports():
+    uid = _api_auth_user_id(request)
+    if not uid:
+        return _api_unauthorized()
+    try:
+        reports = app_module._db_load_direct_reports_for_user(uid)
+    except Exception:
+        reports = []
+    return jsonify(reports)
+
+
+@app.get("/api/v1/direct_reports/<int:report_id>")
+def api_direct_report(report_id: int):
+    uid = _api_auth_user_id(request)
+    if not uid:
+        return _api_unauthorized()
+    if not app_module.user_owns_direct_report(uid, report_id):
+        return jsonify({"error": "not_found"}), 404
+    try:
+        reports = app_module._db_load_direct_reports_for_user(uid)
+    except Exception:
+        reports = []
+    for r in reports:
+        try:
+            if int(r.get("id") or 0) == report_id:
+                return jsonify(r)
+        except Exception:
+            continue
+    return jsonify({"error": "not_found"}), 404
+
+
+@app.get("/api/v1/comp_statements")
+def api_comp_statements():
+    uid = _api_auth_user_id(request)
+    if not uid:
+        return _api_unauthorized()
+    try:
+        items = app_module._db_load_direct_report_comp_data_for_user(uid)
+    except Exception:
+        items = []
+    return jsonify(items)
+
+
+def _direct_reports_with_goals_for_user(uid: int) -> list[dict]:
+    reports = app_module._db_load_direct_reports_for_user(uid)
+    goals = app_module._load_direct_report_goals_for_user(uid)
+    goals_by_rid: dict[int, list[dict]] = {}
+    for g_row in goals:
+        try:
+            rid = int(g_row.get("direct_report_id") or 0)
+        except Exception:
+            continue
+        if rid:
+            goals_by_rid.setdefault(rid, []).append(g_row)
+    out: list[dict] = []
+    for r in reports:
+        rid = int(r.get("id") or 0)
+        if rid and goals_by_rid.get(rid):
+            out.append({"direct_report": r, "goals": goals_by_rid.get(rid, [])})
+    return out
+
+
+@app.get("/api/v1/direct_reports_goals")
+def api_direct_reports_goals():
+    uid = _api_auth_user_id(request)
+    if not uid:
+        return _api_unauthorized()
+    try:
+        data = _direct_reports_with_goals_for_user(uid)
+    except Exception:
+        data = []
+    return jsonify(data)
+
+
+@app.get("/api/v1/direct_reports_goals/<int:report_id>")
+def api_direct_report_goals(report_id: int):
+    uid = _api_auth_user_id(request)
+    if not uid:
+        return _api_unauthorized()
+    if not app_module.user_owns_direct_report(uid, report_id):
+        return jsonify({"error": "not_found"}), 404
+    goals = [
+        g
+        for g in app_module._load_direct_report_goals_for_user(uid)
+        if int(g.get("direct_report_id") or 0) == report_id
+    ]
+    # include the report too for context
+    report = None
+    for r in app_module._db_load_direct_reports_for_user(uid):
+        if int(r.get("id") or 0) == report_id:
+            report = r
+            break
+    return jsonify({"direct_report": report or {"id": report_id}, "goals": goals})
 
 
 # =============================================================================
