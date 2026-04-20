@@ -296,3 +296,14 @@ Fifth api endpoint:
 Endpoint route should be /direct_reports_goals/{id} where {id} is the id of the direct report
 This endpoint should return a single json object representing the direct report's goals with all its attributes
 If the id is not found, the api should return a 404
+
+### Chunk #11:
+To implement this refactor the code to use environment variables and the project must be runnable via Gunicorn with the following criteria:
+Evaluate what configuration variables could be extracted to be environment variables for production.
+Refactor the code to use environment variables for production.
+For development mode save the configuration variables that are being extracted to a file and create a script to use these variables to populate the environment variables that will be required for the refactor. There should be no sensitive data hardcoded but the secret keys for development mode should be stored in a file so that I can continue to use mistral ai and flask. For development mode the script should also populate the secret key environment variables required by the program.
+Then create a .env.example file which clearly documents all the required environment variables.
+The app should also be refactored to be runnable via Gunicorn and include instructions in a file of how to run the program on Gunicorn and also locally.
+Update the requirements.txt with all required dependencies.
+Also update the .gitignore file so that it is properly configured for a production python/flask application. 
+

@@ -22,9 +22,12 @@ build/
 *.swp
 *.swo
 
-# Environment variables
+# Environment and local secrets (keep .env.example and .env.development.example tracked)
 .env
 .env.local
+.env.development
+.env.production
+.env.*.local
 
 # App data
 direct_reports.json
@@ -37,3 +40,26 @@ wingmanem.db
 # OS
 .DS_Store
 Thumbs.db
+
+# Testing / coverage
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+coverage.xml
+*.cover
+.hypothesis/
+
+# Type checkers / linters
+.mypy_cache/
+.ruff_cache/
+.dmypy.json
+dmypy.json
+
+# Flask / instance uploads
+instance/
+*.log
+
+# Python tooling
+pip-log.txt
+pip-delete-this-directory.txt

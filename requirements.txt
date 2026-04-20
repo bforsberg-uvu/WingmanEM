@@ -2,9 +2,10 @@
 # Chunk #1–2: CLI prototype and direct-reports persistence use the Python standard library (e.g. json).
 # Chunk #3: Persistence uses SQLite + SQLAlchemy ORM and JSON files; DB and files kept in sync.
 # Chunk #4: 1:1 recordings use Mistral audio transcription (Voxtral) and chat for summary + action items.
-# Add package names and versions here as features are added, e.g.:
-# requests>=2.28.0
-mistralai
+# Mistral SDK: v1 exposes ``from mistralai import Mistral``; v2 uses ``mistralai.client``.
+# This app supports both import paths (see ``wingmanem.app._load_mistral_sdk``).
+mistralai>=1.0.0
 flask>=3.0.0
 flask-login>=0.6.3
 sqlalchemy>=2.0.0
+gunicorn>=22.0.0

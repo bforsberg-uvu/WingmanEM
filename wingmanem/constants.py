@@ -1,11 +1,20 @@
 """
 Paths, schema keys, and CLI menu styling shared by the app layer.
 
-Database file location is defined here; `wingmanem.app` re-exports these names so
-tests and callers can continue to patch `wingmanem.app.DATABASE_PATH`, etc.
+Filesystem paths come from ``wingmanem.settings`` (environment). ``wingmanem.app``
+imports these names so tests can patch ``wingmanem.app.DATABASE_PATH``, etc.
 """
 
 from __future__ import annotations
+
+from wingmanem.settings import (
+    DATABASE_PATH,
+    DIRECT_REPORT_COMP_DATA_FILE,
+    DIRECT_REPORT_GOALS_FILE,
+    DIRECT_REPORTS_FILE,
+    LEGACY_DIRECT_REPORT_COMP_DATA_FILE,
+    MANAGEMENT_TIPS_FILE,
+)
 
 # Direct_Reports shape (project_plan.md): required id, first_name, last_name; rest optional
 DIRECT_REPORT_OPTIONAL_KEYS = (
@@ -23,14 +32,7 @@ DIRECT_REPORT_OPTIONAL_KEYS = (
     "owner_user_id",
 )
 
-# JSON mirrors and SQLite filename (project root / cwd)
-DIRECT_REPORTS_FILE = "direct_reports.json"
-MANAGEMENT_TIPS_FILE = "management_tips.json"
-DIRECT_REPORT_GOALS_FILE = "direct_report_goals.json"
-DIRECT_REPORT_COMP_DATA_FILE = "direct_report_comp_data.json"
-LEGACY_DIRECT_REPORT_COMP_DATA_FILE = "employee_comp_data.json"
 EMPLOYEE_COMP_DATA_FILE = DIRECT_REPORT_COMP_DATA_FILE
-DATABASE_PATH = "wingmanem.db"
 
 # ANSI colors for CLI menu rendering
 MENU_COLOR_BLACK = "\033[30m"

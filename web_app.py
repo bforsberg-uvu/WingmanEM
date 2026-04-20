@@ -1,7 +1,8 @@
 """
-WingmanEM Flask Web App — application factory wiring and HTTP routes.
+WingmanEM Flask web application — routes and HTTP wiring.
 
-Run: python web_app.py
+Run locally: ``python web_app.py`` or ``./scripts/with_dev_env.sh python web_app.py``
+  (see ``DEPLOYMENT.md``). Production: ``gunicorn wsgi:app`` (see ``DEPLOYMENT.md``).
 
 Layout (search for section headers):
   • Flask app, LoginManager, auth user model
@@ -30,10 +31,11 @@ import wingmanem.app as app_module
 import wingmanem.auth_users as auth_users_module
 from wingmanem.constants import COMP_RATING_LABELS
 from wingmanem.http_debug import raw_http_request_for_display
+from wingmanem.settings import flask_secret_key, max_upload_bytes, web_debug, web_host, web_port
 
 app = Flask(__name__, static_folder="static", template_folder="templates")
-app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", "dev-secret-change-in-production")
-app.config["MAX_CONTENT_LENGTH"] = 32 * 1024 * 1024  # 32 MB for uploads
+app.config["SECRET_KEY"] = flask_secret_key()
+app.config["MAX_CONTENT_LENGTH"] = max_upload_bytes()
 
 login_manager = LoginManager()
 login_manager.init_app(app)
@@ -351,7 +353,7 @@ def direct_reports_list():
         "direct_reports.html",
         reports=reports,
         columns=app_module._LIST_DIRECT_REPORT_COLUMNS,
-        show_generate=app_module.MISTRAL_AVAILABLE and bool(app_module._get_mistral_api_key()),
+        show_generate=app_module.mistral_api_configured(),
     )
 
 
@@ -452,14 +454,19 @@ def direct_reports_purge():
 
 @app.route("/people/direct-reports/generate", methods=["POST"])
 def direct_reports_generate():
-    if app_module.MISTRAL_AVAILABLE and app_module._get_mistral_api_key():
-        num = request.form.get("num", "3")
-        try:
-            n = max(1, min(10, int(num)))
-        except ValueError:
-            n = 3
-        app_module._generate_direct_reports_with_ai_for_user(current_user.id, n)
-        g.direct_reports[:] = app_module._db_load_direct_reports_for_user(current_user.id)
+    if not app_module.mistral_api_configured():
+        flash("Mistral API key is not set. Add MISTRAL_API_KEY to .env.development or the environment.", "error")
+        return redirect(url_for("direct_reports_list"))
+    if not app_module.MISTRAL_AVAILABLE:
+        flash(app_module.mistral_sdk_unavailable_message(), "error")
+        return redirect(url_for("direct_reports_list"))
+    num = request.form.get("num", "3")
+    try:
+        n = max(1, min(10, int(num)))
+    except ValueError:
+        n = 3
+    app_module._generate_direct_reports_with_ai_for_user(current_user.id, n)
+    g.direct_reports[:] = app_module._db_load_direct_reports_for_user(current_user.id)
     return redirect(url_for("direct_reports_list"))
 
 
@@ -605,11 +612,11 @@ def one_to_one_upload():
         f.save(tmp.name)
         path = tmp.name
     try:
-        if app_module.MISTRAL_AVAILABLE and app_module._get_mistral_api_key():
+        if app_module.mistral_client_usable():
             try:
-                from mistralai import Mistral
                 import httpx
-                client = Mistral(api_key=app_module._get_mistral_api_key())
+
+                client = app_module.Mistral(api_key=app_module._get_mistral_api_key())
                 with open(path, "rb") as fp:
                     trans = client.audio.transcriptions.complete(
                         model="voxtral-mini-latest",
@@ -675,14 +682,18 @@ def _reports_with_goals():
 @app.route("/people/goals")
 def goals_admin():
     """Administer Direct Report's Goals menu."""
-    show_generate = app_module.MISTRAL_AVAILABLE and bool(app_module._get_mistral_api_key())
+    show_generate = app_module.mistral_api_configured()
     return render_template("goals_admin.html", show_generate=show_generate)
 
 
 @app.route("/people/goals/generate", methods=["GET", "POST"])
 def goal_generate():
     """Generate goal data with Mistral AI (GET: form, POST: process)."""
-    if not app_module.MISTRAL_AVAILABLE or not app_module._get_mistral_api_key():
+    if not app_module.mistral_api_configured():
+        flash("Mistral API key is not set.", "error")
+        return redirect(url_for("goals_admin"))
+    if not app_module.MISTRAL_AVAILABLE:
+        flash(app_module.mistral_sdk_unavailable_message(), "error")
         return redirect(url_for("goals_admin"))
     if request.method == "POST":
         try:
@@ -1023,4 +1034,4 @@ def developer_menu():
 
 if __name__ == "__main__":
     init_data()
-    app.run(host="0.0.0.0", port=5000, debug=True)
+    app.run(host=web_host(), port=web_port(), debug=web_debug())

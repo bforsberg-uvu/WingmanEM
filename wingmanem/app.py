@@ -5,7 +5,7 @@ Menu-driven app: direct reports, management tips (Mistral AI), milestone reminde
 1:1 recording upload/summary (Mistral), SQLite + JSON persistence.
 
 Sections (in order):
-  1. Configuration (in-memory globals; paths in wingmanem.constants)
+  1. Configuration (in-memory globals; paths from env via wingmanem.constants / settings)
   2. Database (SQLAlchemy + SQLite init; JSON mirror writes; load prefers DB, JSON migrates empty tables)
   3. Utilities (config, I/O, menu box & submenu)
   4. Direct reports (model, load/save, list/add/delete/generate/purge)
@@ -26,11 +26,46 @@ from collections.abc import Callable
 from datetime import date, datetime
 from typing import Any
 
-try:
-    from mistralai import Mistral
-    MISTRAL_AVAILABLE = True
-except ImportError:
+Mistral = None  # type: ignore[misc, assignment]
+MISTRAL_AVAILABLE = False
+MISTRAL_IMPORT_ERROR: str | None = None
+
+
+def _load_mistral_sdk() -> None:
+    """Resolve ``Mistral`` client class for mistralai v1 (root) or v2 (``mistralai.client``)."""
+    global Mistral, MISTRAL_AVAILABLE, MISTRAL_IMPORT_ERROR
+    errs: list[str] = []
+    for label, load in (
+        (
+            "from mistralai import Mistral (v1)",
+            lambda: __import__("mistralai", fromlist=["Mistral"]).Mistral,  # type: ignore[attr-defined]
+        ),
+        (
+            "from mistralai.client import Mistral (v2)",
+            lambda: __import__("mistralai.client", fromlist=["Mistral"]).Mistral,  # type: ignore[attr-defined]
+        ),
+        (
+            "from mistralai.sdk import Mistral",
+            lambda: __import__("mistralai.sdk", fromlist=["Mistral"]).Mistral,  # type: ignore[attr-defined]
+        ),
+    ):
+        try:
+            cls = load()
+            if cls is None:
+                errs.append(f"{label}: resolved to None")
+                continue
+            Mistral = cls
+            MISTRAL_AVAILABLE = True
+            MISTRAL_IMPORT_ERROR = None
+            return
+        except Exception as e:
+            errs.append(f"{label}: {e}")
+    Mistral = None
     MISTRAL_AVAILABLE = False
+    MISTRAL_IMPORT_ERROR = "; ".join(errs) if errs else "unknown error loading mistralai"
+
+
+_load_mistral_sdk()
 
 from wingmanem.constants import (
     DATABASE_PATH,
@@ -47,6 +82,7 @@ from wingmanem.constants import (
     MENU_COLOR_RED,
     MENU_COLOR_RESET,
 )
+from wingmanem.settings import cli_expected_password, mistral_api_key
 
 # ============================================================================
 # CONFIGURATION & CONSTANTS — in-memory globals (paths live in wingmanem.constants)
@@ -1510,12 +1546,32 @@ _db_sync_direct_report_comp_data_from_list = _db_replace_direct_report_comp_data
 # ============================================================================
 
 def _get_expected_password() -> str:
-    """Expected password from environment; defaults to 'wingman' for local dev."""
-    return os.environ.get("WINGMANEM_PASSWORD", "p")
+    """Expected password for optional CLI ``authenticate()`` (``WINGMANEM_PASSWORD``)."""
+    return cli_expected_password()
 
 
 def _get_mistral_api_key() -> str | None:
-    return "579aUFUawlFEvqF6aVXIp6YjxYZvyi3O"
+    return mistral_api_key()
+
+
+def mistral_api_configured() -> bool:
+    """True when ``MISTRAL_API_KEY`` is set — the web UI may offer Mistral actions."""
+    return bool(_get_mistral_api_key())
+
+
+def mistral_client_usable() -> bool:
+    """True when the ``mistralai`` package is importable and an API key is set."""
+    return bool(MISTRAL_AVAILABLE and mistral_api_configured())
+
+
+def mistral_sdk_unavailable_message() -> str:
+    """Explain why the Mistral SDK is not usable (for Flask flash / logs)."""
+    detail = MISTRAL_IMPORT_ERROR or "no import exception was recorded (try pip install mistralai in this venv)."
+    return (
+        "The Mistral AI client could not be loaded in this Python environment. "
+        "Use the same interpreter as your virtualenv, then run: pip install -r requirements.txt "
+        f"(detail: {detail})"
+    )
 
 
 def _clear_screen() -> None:
