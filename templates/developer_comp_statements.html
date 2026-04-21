@@ -11,7 +11,7 @@
   <p class="text-muted" style="margin-bottom: 1rem;"><code>/items</code> loads rows via <code>_db_load_direct_report_comp_data()</code> (<code>select(DirectReportCompDataORM)</code>, ordered by <code>direct_report_id</code>). If the query returns no rows but <code>direct_reports</code> is non-empty, it calls <code>_generate_direct_report_comp_statements()</code>, which repopulates the table through <code>_db_replace_direct_report_comp_data_from_list</code>, then loads again.</p>
 
   <div class="form-actions" style="margin-bottom: 1.5rem; flex-wrap: wrap; gap: 0.5rem;">
-    <a href="{{ url_for('developer_menu') }}" class="btn">← Developer menu</a>
+    <a href="{{ url_for('developer_menu') }}" class="btn">← System menu</a>
     <a href="{{ url_for('developer_schema') }}" class="btn">Schema &amp; models</a>
     <a href="{{ url_for('developer_direct_reports') }}" class="btn">Direct reports</a>
   </div>
@@ -82,5 +82,5 @@ return render_template(
 
   <p class="text-muted" style="margin-top: 1rem;">For custom reporting, use <code>select(DirectReportCompDataORM)</code> with <code>get_session()</code> the same way <code>_db_load_direct_report_comp_data</code> does.</p>
 
-  <p style="margin-top: 1.5rem;"><a href="{{ url_for('developer_menu') }}" class="btn">← Developer menu</a></p>
+  <p style="margin-top: 1.5rem;"><a href="{{ url_for('developer_menu') }}" class="btn">← System menu</a></p>
 {% endblock %}

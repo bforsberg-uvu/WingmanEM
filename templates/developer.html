@@ -6,7 +6,7 @@
 {% endblock %}
 
 {% block content %}
-  <h2 style="margin-bottom: 1rem;">Developer menu</h2>
+  <h2 style="margin-bottom: 1rem;">System menu</h2>
   <p class="text-muted" style="margin-bottom: 0.75rem;">Documentation focused on <strong>SQLAlchemy ORM</strong> and <strong>SQLite</strong>: models, sessions, loads, and full-table replaces.</p>
   <p class="text-muted" style="margin-bottom: 1.5rem;">Data is read with <code>_db_load_*</code> (typically <code>select()</code> on mapped classes). Writes that replace an entire logical table use <code>_db_replace_*_from_list</code>: <code>delete(ORM)</code>, then <code>session.add()</code> per row, <code>commit()</code>. Tables are ensured by <code>Base.metadata.create_all()</code> in <code>wingmanem/database.py</code>.</p>
 
