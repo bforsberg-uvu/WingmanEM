@@ -35,6 +35,12 @@
         <p><code>users</code>, <code>user_passwords</code>, Flask-Login accounts (hashes shown).</p>
       </a>
     </div>
+    <div class="card">
+      <a href="{{ url_for('user_profile') }}">
+        <h2>API tokens</h2>
+        <p>Generate and revoke API tokens using the same profile token manager.</p>
+      </a>
+    </div>
   </div>
 
   <p style="margin-top: 1.5rem;"><a href="{{ url_for('index') }}" class="btn">← Back to main menu</a></p>
