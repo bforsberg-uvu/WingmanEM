@@ -273,6 +273,12 @@ a:hover {
   color: var(--text-muted);
   font-size: 0.9rem;
 }
+.coming-soon {
+  color: #fca5a5;
+  font-weight: 600;
+  display: block;
+  text-align: center;
+}
 
 /* Tip box */
 .tip-box {
